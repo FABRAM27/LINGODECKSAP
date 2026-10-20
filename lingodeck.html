@@ -42,6 +42,10 @@
       box-sizing: border-box;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     html {
       min-height: 100%;
       background: var(--paper);
@@ -1510,6 +1514,46 @@
       }
     }
 
+    .header-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+    .settings-trigger { border: 1px solid #46516a; border-radius: 9px; background: transparent; color: white; padding: 7px 11px; cursor: pointer; }
+    .library-controls, .practice-summary, .useful-keys, .settings-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .library-controls { margin: 14px 0; }
+    .library-controls select, .settings-body select { max-width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+    .library-controls .button { margin-left: auto; }
+    .practice-summary { padding: 10px 18px; color: var(--ink-2); font-size: .82rem; }
+    .practice-summary .completion-actions { margin-left: auto; }
+    .completion-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .completion-actions button, .column-toggle, .key-button { border: 1px solid var(--line); border-radius: 8px; background: white; padding: 6px 10px; cursor: pointer; }
+    .column-toggle { display: block; margin-top: 6px; font-size: .74rem; color: var(--blue-dark); }
+    .column-toggle[aria-pressed="true"] { background: var(--blue-soft); }
+    .deck-option.is-completed { color: var(--blue-dark); background: var(--blue-soft); }
+    .completed-label { font-size: .7rem; margin-left: 5px; }
+    .useful-keys { padding: 12px 18px; border-top: 1px solid var(--line); background: var(--surface-soft); }
+    .useful-keys[hidden], .practice-summary [hidden], .header-actions [hidden], .library-controls[hidden] { display: none; }
+    .key-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+    .key-button { min-width: 36px; min-height: 38px; font-size: 1.05rem; }
+    .settings-body { padding: 0 24px 20px; }
+    #settingsDialog { overflow-y: auto; }
+    .settings-body fieldset { border: 0; border-top: 1px solid var(--line); margin: 16px 0 0; padding: 15px 0 0; min-width: 0; }
+    .settings-body legend { padding-right: 10px; font-weight: 750; }
+    .settings-row { margin: 10px 0; }
+    label.settings-row { flex-wrap: nowrap; align-items: flex-start; }
+    label.settings-row input { margin-top: .3em; flex: 0 0 auto; }
+    .settings-row > label:first-child { flex: 1; }
+    .settings-note, #voiceDescription, #keyHint { font-size: .8rem; color: var(--ink-2); }
+    #voiceList { max-height: 140px; overflow: auto; padding-left: 20px; font-size: .8rem; }
+    .shortcut-list { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; font-size: .82rem; }
+    .shortcut-list dt, .shortcut-list dd { margin: 0; }
+    .storage-notice { padding: 10px 14px; border: 1px solid #edcf9c; background: var(--warning-soft); border-radius: 10px; font-size: .85rem; }
+    #backupInput { display: none; }
+    #importDialog p { padding: 0 24px; }
+    @media (max-width: 680px) {
+      .header-actions { gap: 5px; }
+      .practice-summary, .useful-keys { padding: 10px 13px; }
+      .practice-summary .completion-actions { margin-left: 0; }
+      .settings-body { padding-inline: 16px; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       *,
       *::before,
@@ -1554,19 +1598,23 @@
         </button>
       </nav>
 
+      <div class="header-actions">
       <div class="top-status" aria-live="polite">
         <span class="status-dot" id="statusDot"></span>
         <span id="topStatusText">Waiting for data</span>
       </div>
+      <button class="settings-trigger" id="settingsButton" type="button" aria-haspopup="dialog">Settings</button>
+      </div>
     </header>
 
     <main>
+      <p class="storage-notice" id="storageNotice" role="status" hidden></p>
       <section class="view" id="sourceView" role="tabpanel" aria-labelledby="sourceTab">
         <div class="view-heading">
           <div>
             <p class="eyebrow">01 · Prepare</p>
             <h1>Shape your study set.</h1>
-            <p class="view-description">Paste an Anki export or add a text file, then choose the exact deck you want to study.</p>
+            <p class="view-description">Import once, then choose a saved deck for ordered practice before Anki.</p>
           </div>
           <div class="keyboard-hint" aria-hidden="true">
             <kbd>↑</kbd><span>fields</span><kbd>↓</kbd><span>records</span>
@@ -1596,6 +1644,12 @@
           </div>
           <span class="sr-only" id="formatHelp">The input stays on one line and scrolls horizontally. Use vertical arrow characters between fields and downward arrow characters between records.</span>
         </section>
+
+        <div class="library-controls" id="libraryControls" hidden>
+          <label for="libraryFilter">Deck library</label>
+          <select id="libraryFilter"><option value="all">All decks</option><option value="completed">Completed decks</option></select>
+          <button class="button button-danger-soft" id="deleteDeckButton" type="button">Delete selected deck</button>
+        </div>
 
         <section class="card workspace-card" aria-label="Parsed source data">
           <div class="workspace-toolbar">
@@ -1680,6 +1734,8 @@
             </div>
 
             <div class="practice-actions">
+              <button class="button button-secondary" id="repeatButton" type="button" hidden>Repeat group</button>
+              <button class="button button-secondary" id="keysButton" type="button" aria-pressed="false" disabled>Useful keys</button>
               <button class="button button-secondary" id="fieldsButton" type="button" disabled>
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M5 6.5h14M5 12h14M5 17.5h14M9 4v5M15 9.5v5M10.5 15v5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
@@ -1699,6 +1755,15 @@
                 </svg>
                 Reset
               </button>
+            </div>
+          </div>
+          <div class="practice-summary">
+            <span id="activeDeckName"></span>
+            <span id="groupPosition" aria-live="polite">No group selected</span>
+            <div class="completion-actions">
+              <span id="reviewDate"></span>
+              <button id="completeDeckButton" type="button" disabled>Mark completed</button>
+              <button id="undoCompletionButton" type="button" hidden>Undo completion</button>
             </div>
           </div>
           <div class="practice-progress" aria-hidden="true">
@@ -1725,6 +1790,13 @@
               <tbody id="practiceTableBody"></tbody>
             </table>
           </div>
+          <section class="useful-keys" id="usefulKeys" aria-label="Useful language keys" hidden>
+            <label for="keyLanguage">Useful keys</label>
+            <select id="keyLanguage" aria-describedby="keyHint"></select>
+            <label><input id="uppercaseKeys" type="checkbox"> Uppercase</label>
+            <div class="key-buttons" id="keyButtons"></div>
+            <span id="keyHint">Choose an answer field, then insert a letter at the cursor.</span>
+          </section>
         </section>
       </section>
     </main>
@@ -1747,6 +1819,37 @@
       <span class="modal-note" id="fieldSelectionNote">At least one field is required.</span>
       <button class="button button-primary" id="applyFieldsButton" type="button">Apply fields</button>
     </div>
+  </dialog>
+
+  <dialog id="settingsDialog" aria-labelledby="settingsTitle">
+    <div class="modal-header"><h2 id="settingsTitle">Settings</h2><button class="modal-close" id="closeSettingsButton" type="button" aria-label="Close settings">×</button></div>
+    <div class="settings-body">
+      <fieldset><legend>Audio</legend>
+        <div class="settings-row"><label for="speechRate">Playback speed</label><select id="speechRate"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="0.9">0.9×</option><option value="1" selected>1× · Normal</option><option value="1.1">1.1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></div>
+        <div class="settings-row"><label for="previewLanguage">Voice preview</label><select id="previewLanguage"></select><button class="button button-secondary" id="previewVoiceButton" type="button">Listen</button></div>
+        <p id="voiceDescription" role="status">The best available voice is selected automatically for each language.</p>
+        <details><summary>Available voices · preferred first</summary><ul id="voiceList"></ul></details>
+      </fieldset>
+      <fieldset><legend>Practice</legend>
+        <label class="settings-row"><input id="repeatPasses" type="checkbox"> Enable Repeat group, preserving order and column visibility</label>
+        <div class="settings-row"><label for="answerField">Check typed answers against</label><select id="answerField"><option value="-1">Any included field</option></select></div>
+        <p class="settings-note">Typing is optional. Fields chooses your languages; column buttons show or hide them.</p>
+      </fieldset>
+      <fieldset><legend>Keyboard shortcuts</legend>
+        <label class="settings-row"><input id="enableShortcuts" type="checkbox" checked> Enable shortcuts outside text fields</label>
+        <dl class="shortcut-list"><dt><kbd>B</kbd> / <kbd>N</kbd></dt><dd>Previous / next group (also [ / ])</dd><dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Show / hide an included column</dd><dt><kbd>V</kbd></dt><dd>Reveal / hide all</dd><dt><kbd>R</kbd></dt><dd>Replay the last visible pronunciation</dd><dt><kbd>F</kbd></dt><dd>Fields</dd><dt><kbd>K</kbd></dt><dd>Useful keys</dd><dt><kbd>P</kbd></dt><dd>Repeat group, when enabled</dd><dt><kbd>?</kbd></dt><dd>Settings and shortcut help</dd></dl>
+        <p class="settings-note">Practice shortcuts never use Ctrl, Command, Alt, or AltGr. Text entry, composition, dialogs, browser shortcuts, Space, and normal control navigation keep their usual behavior. Enter checks an answer only inside its answer field.</p>
+      </fieldset>
+      <fieldset><legend>Library</legend>
+        <div class="settings-row"><button class="button button-secondary" id="backupButton" type="button">Back up library</button><label class="button button-secondary" for="backupInput" tabindex="0" role="button" id="restoreBackupLabel">Restore backup</label><input id="backupInput" type="file" accept=".json,application/json"></div>
+        <p class="settings-note">Decks and preferences are saved in this browser. Keep a backup before clearing browser data, moving the HTML file, or changing devices.</p>
+      </fieldset>
+    </div>
+  </dialog>
+  <dialog id="importDialog" aria-labelledby="importTitle">
+    <div class="modal-header"><h2 id="importTitle">Update saved decks?</h2></div>
+    <p id="importMessage"></p><p>Your other decks, field preferences, and completion markers will be kept.</p>
+    <div class="modal-footer"><button class="button button-secondary" id="cancelImportButton" type="button">Cancel</button><button class="button button-primary" id="confirmImportButton" type="button">Update decks</button></div>
   </dialog>
 
   <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="false"></div>
@@ -1814,7 +1917,26 @@
         tempEnabledFields: [],
         speechButton: null,
         speechUtterance: null,
-        speechToken: 0
+        speechToken: 0,
+        answerField: -1,
+        lastAnswer: null,
+        lastSpeech: null,
+        restoring: false
+      };
+
+      var library = { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE' }, session: {} };
+      var database = null;
+      var storageRevision = 0;
+      var storageReady = false;
+      var saveQueue = Promise.resolve();
+      var saveTimer = null;
+      var usefulLetters = {
+        'en-US': [], 'es-ES': [],
+        'de-DE': ['ä', 'ö', 'ü', 'ß'],
+        'pt-BR': ['ã', 'õ', 'â', 'ê', 'ô', 'à', 'ç'],
+        'nb-NO': ['æ', 'ø', 'å'],
+        'it-IT': ['à', 'è', 'é', 'ì', 'ò', 'ù'],
+        'fr-FR': ['à', 'â', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'î', 'ï', 'ô', 'œ', 'ù', 'û', 'ü', 'ÿ']
       };
 
       var preferredVoiceNames = {
@@ -1871,6 +1993,9 @@
         toastRegion: document.getElementById('toastRegion')
       };
       els.answerFeedback = document.getElementById('answerFeedback');
+      ['settingsButton', 'settingsDialog', 'closeSettingsButton', 'speechRate', 'previewLanguage', 'previewVoiceButton', 'voiceDescription', 'voiceList', 'repeatPasses', 'enableShortcuts', 'answerField', 'backupButton', 'backupInput', 'restoreBackupLabel', 'libraryControls', 'libraryFilter', 'deleteDeckButton', 'storageNotice', 'repeatButton', 'keysButton', 'usefulKeys', 'keyLanguage', 'uppercaseKeys', 'keyButtons', 'keyHint', 'activeDeckName', 'groupPosition', 'reviewDate', 'completeDeckButton', 'undoCompletionButton', 'importDialog', 'importMessage', 'cancelImportButton', 'confirmImportButton'].forEach(function (name) {
+        els[name] = document.getElementById(name);
+      });
 
       var icons = {
         play: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.5 6.5v11l9-5.5-9-5.5Z" fill="currentColor"/></svg>',
@@ -1890,6 +2015,187 @@
 
       function escapeAttr(value) {
         return escapeHtml(value).replace(/\n/g, ' ');
+      }
+
+      function storageWarning(message) {
+        els.storageNotice.textContent = message;
+        els.storageNotice.hidden = false;
+      }
+
+      function saveCurrentDeck() {
+        if (!state.activeDeck) return;
+        library.deckSettings[state.activeDeck] = {
+          fields: state.fields.map(function (field) { return Object.assign({}, field); }),
+          answerField: state.answerField,
+          chunk: state.chunkIndex
+        };
+      }
+
+      function persistLibrary() {
+        if (state.restoring) return saveQueue;
+        saveCurrentDeck();
+        library.session = { deck: state.activeDeck, chunk: state.chunkIndex, view: els.practiceView.hidden ? 'source' : 'practice' };
+        if (!database) return Promise.resolve(false);
+        var snapshot = JSON.parse(JSON.stringify(library));
+        saveQueue = saveQueue.catch(function () {}).then(function () {
+          if (!database) return false;
+          return new Promise(function (resolve, reject) {
+            var transaction = database.transaction('library', 'readwrite');
+            var store = transaction.objectStore('library');
+            var check = store.get('current');
+            var conflict = false;
+            check.onsuccess = function () {
+              var revision = check.result && Number.isSafeInteger(check.result.revision) ? check.result.revision : 0;
+              if (revision !== storageRevision) { conflict = true; transaction.abort(); return; }
+              snapshot.revision = storageRevision + 1;
+              store.put(snapshot, 'current');
+            };
+            transaction.oncomplete = function () { storageRevision = snapshot.revision; resolve(true); };
+            transaction.onerror = function () { reject(conflict ? new Error('LibraryConflict') : transaction.error || new Error('Save failed')); };
+            transaction.onabort = transaction.onerror;
+          });
+        }).catch(function (error) {
+          if (error.message === 'LibraryConflict') {
+            if (database) database.close();
+            database = null;
+            storageWarning('Another tab changed the saved library. Reload to use that version, or back up this tab’s changes in Settings. This tab will not overwrite the other tab.');
+          } else storageWarning('Your latest changes could not be saved. Back up your library in Settings before closing this page.');
+          return false;
+        });
+        return saveQueue;
+      }
+
+      function scheduleSave() {
+        if (state.restoring) return;
+        window.clearTimeout(saveTimer);
+        saveTimer = window.setTimeout(persistLibrary, 150);
+      }
+
+      function validateLibrary(value) {
+        if (!value || value.version !== 1 || !Array.isArray(value.records)) throw new Error('This is not a supported LingoDeck library backup.');
+        var clean = { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: {}, session: {} };
+        clean.records = value.records.map(function (record, index) {
+          if (!record || typeof record.deck !== 'string' || !record.deck.trim() || !Array.isArray(record.fields) || !record.fields.length || record.fields.some(function (field) { return typeof field !== 'string'; })) throw new Error('The library contains an invalid record.');
+          return { id: 'saved-' + index, noteType: typeof record.noteType === 'string' ? record.noteType : 'Basic', deck: record.deck, fields: record.fields.slice() };
+        });
+        Object.keys(value.deckSettings || {}).forEach(function (deck) {
+          var item = value.deckSettings[deck];
+          if (!item || !Array.isArray(item.fields)) return;
+          clean.deckSettings[deck] = { fields: item.fields.map(function (field, index) {
+            return { name: typeof field.name === 'string' ? field.name : 'Field ' + (index + 1), language: languages.some(function (language) { return language.code === field.language; }) ? field.language : 'en-US', enabled: field.enabled !== false, visible: field.visible === true };
+          }), answerField: Number.isInteger(item.answerField) ? item.answerField : -1, chunk: Number.isInteger(item.chunk) && item.chunk >= 0 ? item.chunk : 0 };
+        });
+        Object.keys(value.completed || {}).forEach(function (deck) {
+          if (typeof value.completed[deck] === 'string' && Number.isFinite(Date.parse(value.completed[deck]))) clean.completed[deck] = value.completed[deck];
+        });
+        var preferences = value.preferences || {};
+        clean.preferences = {
+          rate: [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5].indexOf(Number(preferences.rate)) >= 0 ? Number(preferences.rate) : 1,
+          repeatPasses: preferences.repeatPasses === true, shortcuts: preferences.shortcuts !== false,
+          keys: preferences.keys === true, keyLanguage: Object.hasOwn(usefulLetters, preferences.keyLanguage) ? preferences.keyLanguage : 'de-DE'
+        };
+        var session = value.session || {};
+        clean.session = { deck: typeof session.deck === 'string' ? session.deck : '', chunk: Number.isInteger(session.chunk) && session.chunk >= 0 ? session.chunk : 0, view: session.view === 'practice' ? 'practice' : 'source' };
+        return clean;
+      }
+
+      function syncLibraryUI() {
+        state.records = library.records;
+        state.decks = Array.from(new Set(state.records.map(function (record) { return record.deck; }))).sort();
+        var hasRecords = state.records.length > 0;
+        els.recordCount.textContent = String(state.records.length);
+        els.deckCount.textContent = String(state.decks.length);
+        els.fieldCount.textContent = String(state.fields.length);
+        els.libraryControls.hidden = !hasRecords;
+        els.deckTrigger.disabled = !hasRecords;
+        els.retrieveButton.disabled = !state.pendingDeck || !hasRecords;
+        els.deleteDeckButton.disabled = !state.pendingDeck || !hasRecords;
+        els.deckTriggerLabel.textContent = state.pendingDeck || 'Import data to choose a deck';
+        renderDeckMenu();
+        updateTopStatus();
+      }
+
+      function restoreLibraryUI() {
+        state.restoring = true;
+        cancelSpeech();
+        state.fields = [];
+        resetLoadedData();
+        state.pendingDeck = library.session.deck || (library.records[0] && library.records[0].deck) || '';
+        syncLibraryUI();
+        if (state.pendingDeck && state.records.some(function (record) { return isDeckMatch(record.deck, state.pendingDeck); })) {
+          retrieveData(true);
+          switchView(library.session.view || 'source');
+        } else {
+          state.pendingDeck = state.decks[0] || '';
+          syncLibraryUI();
+          switchView('source');
+        }
+        renderUsefulKeys();
+        state.restoring = false;
+      }
+
+      async function initializeLibrary() {
+        els.parseButton.disabled = true;
+        try {
+          database = await new Promise(function (resolve, reject) {
+            var request = indexedDB.open('lingodeck-library', 1);
+            request.onupgradeneeded = function () { request.result.createObjectStore('library'); };
+            request.onsuccess = function () { resolve(request.result); };
+            request.onerror = function () { reject(request.error); };
+            request.onblocked = function () { reject(new Error('Storage is blocked by another tab')); };
+          });
+          database.onversionchange = function () { database.close(); database = null; storageWarning('Library storage changed in another tab. Reload before making more changes.'); };
+          var saved = await new Promise(function (resolve, reject) {
+            var request = database.transaction('library', 'readonly').objectStore('library').get('current');
+            request.onsuccess = function () { resolve(request.result); };
+            request.onerror = function () { reject(request.error); };
+          });
+          if (saved) {
+            library = validateLibrary(saved);
+            storageRevision = Number.isSafeInteger(saved.revision) ? saved.revision : 0;
+          }
+          restoreLibraryUI();
+          if (location.protocol === 'file:') storageWarning('Local-file storage depends on this browser and file location. Keep a library backup in Settings before moving this file.');
+        } catch (error) {
+          if (database) database.close();
+          database = null;
+          storageWarning('Saved storage is unavailable or could not be read. You can practice, but back up this session in Settings before closing it.');
+        } finally {
+          storageReady = true;
+          els.parseButton.disabled = false;
+          document.documentElement.dataset.libraryReady = 'true';
+        }
+      }
+
+      function confirmImport(count) {
+        els.importMessage.textContent = count + (count === 1 ? ' imported deck already exists in your library.' : ' imported decks already exist in your library.');
+        els.importDialog.returnValue = '';
+        els.importDialog.showModal();
+        return new Promise(function (resolve) {
+          els.importDialog.addEventListener('close', function () { resolve(els.importDialog.returnValue === 'update'); }, { once: true });
+        });
+      }
+
+      function completionAction(undo) {
+        if (!state.activeDeck) return;
+        if (undo) delete library.completed[state.activeDeck];
+        else library.completed[state.activeDeck] = new Date().toISOString();
+        renderDeckMenu();
+        updatePracticeControls();
+        persistLibrary();
+      }
+
+      function deleteSelectedDeck() {
+        var deck = state.pendingDeck;
+        if (!deck || !window.confirm('Delete “' + deck + '” and its subdecks from this library? Other decks will be kept.')) return;
+        saveCurrentDeck();
+        library.records = library.records.filter(function (record) { return !isDeckMatch(record.deck, deck); });
+        [library.deckSettings, library.completed].forEach(function (settings) { Object.keys(settings).forEach(function (path) { if (isDeckMatch(path, deck)) delete settings[path]; }); });
+        library.session = {};
+        state.fields = [];
+        restoreLibraryUI();
+        persistLibrary();
+        showToast('Selected deck and its subdecks were deleted. Restore a previous backup to recover them.', 'info');
       }
 
       function sanitizeHtml(value) {
@@ -1969,6 +2275,7 @@
         if (!isSource) {
           renderPractice();
         }
+        scheduleSave();
       }
 
       function normalizeUploadedText(text) {
@@ -2068,8 +2375,8 @@
       }
 
       function makeDeckTree(deckNames) {
-        var root = {};
-        var exactCounts = {};
+        var root = Object.create(null);
+        var exactCounts = Object.create(null);
 
         state.records.forEach(function (record) {
           exactCounts[record.deck] = (exactCounts[record.deck] || 0) + 1;
@@ -2085,7 +2392,7 @@
           parts.forEach(function (part) {
             path.push(part);
             if (!cursor[part]) {
-              cursor[part] = { name: part, fullPath: path.join('::'), children: {} };
+              cursor[part] = { name: part, fullPath: path.join('::'), children: Object.create(null) };
             }
             cursor = cursor[part].children;
           });
@@ -2111,13 +2418,16 @@
           return renderDeckNode(node.children[key]);
         }).join('');
         var hasChildren = Boolean(children);
+        var completed = Boolean(library.completed[node.fullPath]);
+        if (els.libraryFilter.value === 'completed' && !completed && !hasChildren) return '';
         var isSelected = state.pendingDeck === node.fullPath;
+        var isOpen = isSelected || state.pendingDeck.indexOf(node.fullPath + '::') === 0 || els.libraryFilter.value === 'completed';
 
-        return '<li class="deck-node' + (isSelected ? ' is-open' : '') + '" role="treeitem"' + (hasChildren ? ' aria-expanded="false"' : '') + '>' +
+        return '<li class="deck-node' + (isOpen ? ' is-open' : '') + '" role="treeitem"' + (hasChildren ? ' aria-expanded="' + String(isOpen) + '"' : '') + '>' +
           '<div class="deck-line">' +
-            '<button class="deck-expand" type="button" tabindex="-1" ' + (hasChildren ? '' : 'disabled') + ' aria-label="' + (hasChildren ? 'Expand ' + escapeAttr(node.name) : '') + '">' + icons.chevronRight + '</button>' +
-            '<button class="deck-option' + (isSelected ? ' is-selected' : '') + '" type="button" data-deck="' + escapeAttr(node.fullPath) + '">' +
-              '<span class="deck-option-name">' + escapeHtml(node.name) + '</span>' +
+            '<button class="deck-expand" type="button" ' + (hasChildren ? '' : 'disabled') + ' aria-label="' + (hasChildren ? 'Expand or collapse ' + escapeAttr(node.name) : '') + '">' + icons.chevronRight + '</button>' +
+            '<button class="deck-option' + (isSelected ? ' is-selected' : '') + (completed ? ' is-completed' : '') + '" type="button" data-deck="' + escapeAttr(node.fullPath) + '">' +
+              '<span class="deck-option-name">' + escapeHtml(node.name) + (completed ? '<span class="completed-label"> ✓ Completed</span>' : '') + '</span>' +
               '<span class="deck-count">' + node.count + '</span>' +
             '</button>' +
           '</div>' +
@@ -2131,7 +2441,7 @@
           return renderDeckNode(tree[key]);
         }).join('');
 
-        els.deckMenu.innerHTML = html ? '<ul class="deck-tree" role="tree">' + html + '</ul>' : '<p class="format-note">No decks found.</p>';
+        els.deckMenu.innerHTML = html ? '<ul class="deck-tree" role="tree">' + html + '</ul>' : '<p class="settings-note">' + (els.libraryFilter.value === 'completed' ? 'No completed decks yet.' : 'No decks found.') + '</p>';
       }
 
       function resetLoadedData() {
@@ -2147,35 +2457,25 @@
         updatePracticeControls();
       }
 
-      function handleParse() {
+      async function handleParse() {
+        if (!storageReady || els.importDialog.open) return;
+        els.parseButton.disabled = true;
         try {
           var result = parseData(els.rawInput.value);
-          var previousFields = state.fields;
-          state.records = result.records;
-          state.decks = Array.from(new Set(state.records.map(function (record) {
-            return record.deck;
-          }))).sort();
-          state.fields = Array.from({ length: result.maxFields }, function (_, index) {
-            var previous = previousFields[index];
-            return {
-              name: previous ? previous.name : 'Field ' + (index + 1),
-              language: previous ? previous.language : (index === 1 ? 'de-DE' : 'en-US'),
-              enabled: previous ? previous.enabled : true
-            };
-          });
-          state.pendingDeck = state.decks[0] || '';
+          var importedDecks = new Set(result.records.map(function (record) { return record.deck; }));
+          var overlaps = Array.from(importedDecks).filter(function (deck) { return state.decks.indexOf(deck) >= 0; });
+          if (overlaps.length && !(await confirmImport(overlaps.length))) return;
+          saveCurrentDeck();
+          library.records = library.records.filter(function (record) { return !importedDecks.has(record.deck); }).concat(result.records);
+          state.pendingDeck = result.records[0].deck;
           resetLoadedData();
-          renderDeckMenu();
+          state.fields = [];
+          els.libraryFilter.value = 'all';
+          syncLibraryUI();
+          els.fieldCount.textContent = String(result.maxFields);
+          await persistLibrary();
 
-          els.deckTrigger.disabled = false;
-          els.retrieveButton.disabled = !state.pendingDeck;
-          els.deckTriggerLabel.textContent = state.pendingDeck || 'Choose a deck';
-          els.recordCount.textContent = String(state.records.length);
-          els.deckCount.textContent = String(state.decks.length);
-          els.fieldCount.textContent = String(state.fields.length);
-          updateTopStatus();
-
-          var message = state.records.length + ' records parsed across ' + state.decks.length + (state.decks.length === 1 ? ' deck.' : ' decks.');
+          var message = result.records.length + ' records imported across ' + importedDecks.size + (importedDecks.size === 1 ? ' deck.' : ' decks.');
           if (result.errors) {
             message += ' ' + result.errors + (result.errors === 1 ? ' malformed row was skipped.' : ' malformed rows were skipped.');
           }
@@ -2183,8 +2483,11 @@
             message += ' Short rows were padded to keep the columns aligned.';
           }
           showToast(message, 'success');
+          return result;
         } catch (error) {
           showToast(error.message || 'The data could not be parsed.', 'error');
+        } finally {
+          els.parseButton.disabled = false;
         }
       }
 
@@ -2192,7 +2495,8 @@
         return recordDeck === selectedDeck || recordDeck.indexOf(selectedDeck + '::') === 0;
       }
 
-      function retrieveData() {
+      function retrieveData(restoring) {
+        restoring = restoring === true;
         if (!state.pendingDeck) {
           showToast('Choose a deck before retrieving data.', 'error');
           return;
@@ -2207,9 +2511,19 @@
           return;
         }
 
+        saveCurrentDeck();
+        cancelSpeech();
         state.activeDeck = state.pendingDeck;
         state.activeRows = matching;
-        state.chunkIndex = 0;
+        var saved = library.deckSettings[state.activeDeck] || {};
+        var width = matching.reduce(function (maximum, record) { return Math.max(maximum, record.fields.length); }, 0);
+        state.fields = Array.from({ length: width }, function (_, index) {
+          var previous = saved.fields && saved.fields[index];
+          return previous ? Object.assign({}, previous) : { name: 'Field ' + (index + 1), language: index === 1 ? 'de-DE' : 'en-US', enabled: true, visible: false };
+        });
+        if (!state.fields.some(function (field) { return field.enabled; })) state.fields[0].enabled = true;
+        state.answerField = Number.isInteger(saved.answerField) && state.fields[saved.answerField] && state.fields[saved.answerField].enabled ? saved.answerField : -1;
+        state.chunkIndex = Math.min(restoring && library.session.deck === state.activeDeck ? library.session.chunk || 0 : saved.chunk || 0, getChunkCount() - 1);
         state.practice.clear();
         state.revealAll = false;
 
@@ -2217,7 +2531,11 @@
         populateRanges();
         renderPractice();
         updateTopStatus();
-        showToast(matching.length + (matching.length === 1 ? ' card is' : ' cards are') + ' ready to practice.', 'success');
+        els.fieldCount.textContent = String(state.fields.length);
+        if (!restoring) {
+          persistLibrary();
+          showToast(matching.length + (matching.length === 1 ? ' card is' : ' cards are') + ' ready to practice.', 'success');
+        }
       }
 
       function languageOptions(selectedCode) {
@@ -2311,12 +2629,13 @@
         var chunk = getCurrentChunk();
         var startNumber = state.chunkIndex * state.chunkSize + 1;
         var dynamicHeaders = selectedFields.map(function (fieldIndex) {
-          return '<th scope="col">' + escapeHtml(state.fields[fieldIndex].name) + '</th>';
+          var visible = state.revealAll || state.fields[fieldIndex].visible;
+          return '<th scope="col">' + escapeHtml(state.fields[fieldIndex].name) + '<button class="column-toggle" type="button" data-column-toggle="' + fieldIndex + '" aria-pressed="' + Boolean(visible) + '" aria-label="' + (visible ? 'Hide ' : 'Show ') + escapeAttr(state.fields[fieldIndex].name) + '">' + (visible ? 'Hide column' : 'Show column') + '</button></th>';
         }).join('');
 
         els.practiceTableHead.innerHTML = '<tr>' +
           '<th class="number-col" scope="col">#</th>' +
-          '<th class="answer-col" scope="col">Your answer<span class="answer-contract">matches any shown field</span></th>' +
+          '<th class="answer-col" scope="col">Your answer<span class="answer-contract">' + (state.answerField < 0 ? 'optional · matches any included field' : 'optional · matches ' + escapeHtml(state.fields[state.answerField].name)) + '</span></th>' +
           '<th class="reveal-col" scope="col">Reference</th>' +
           dynamicHeaders +
         '</tr>';
@@ -2330,7 +2649,7 @@
 
           var referenceCells = selectedFields.map(function (fieldIndex) {
             var text = record.fields[fieldIndex] || '';
-            if (!isVisible) {
+            if (!isVisible && !state.fields[fieldIndex].visible) {
               return '<td class="reference-cell"><span class="hidden-reference" aria-label="Hidden reference">•••••</span></td>';
             }
 
@@ -2363,6 +2682,7 @@
         els.practiceEmpty.hidden = true;
         els.practiceTableWrap.hidden = false;
         updatePracticeControls();
+        renderUsefulKeys();
       }
 
       function updatePracticeControls() {
@@ -2374,6 +2694,16 @@
         els.rangeSelect.disabled = !hasRows;
         els.previousButton.disabled = !hasRows || state.chunkIndex <= 0;
         els.nextButton.disabled = !hasRows || state.chunkIndex >= chunkCount - 1;
+        els.repeatButton.hidden = !library.preferences.repeatPasses;
+        els.repeatButton.disabled = !hasRows;
+        els.keysButton.disabled = !hasRows;
+        els.completeDeckButton.disabled = !hasRows;
+        els.completeDeckButton.textContent = library.completed[state.activeDeck] ? 'Reviewed today' : 'Mark completed';
+        els.undoCompletionButton.hidden = !library.completed[state.activeDeck];
+        els.activeDeckName.textContent = state.activeDeck;
+        els.activeDeckName.style.overflowWrap = 'anywhere';
+        els.reviewDate.textContent = library.completed[state.activeDeck] ? 'Completed · Last reviewed ' + new Date(library.completed[state.activeDeck]).toLocaleDateString() : '';
+        els.groupPosition.textContent = hasRows ? 'Group ' + (state.chunkIndex + 1) + ' of ' + chunkCount + ' · Words ' + (state.chunkIndex * state.chunkSize + 1) + '–' + Math.min((state.chunkIndex + 1) * state.chunkSize, state.activeRows.length) + ' of ' + state.activeRows.length : 'No group selected';
         els.revealAllButton.setAttribute('aria-pressed', String(state.revealAll));
         els.revealAllButton.classList.toggle('is-active', state.revealAll);
         els.revealAllButton.lastChild.nodeValue = state.revealAll ? ' Hide all' : ' Reveal all';
@@ -2384,16 +2714,19 @@
         state.practice.clear();
         state.revealAll = false;
         cancelSpeech();
+        state.lastAnswer = null;
       }
 
-      function changeChunk(nextIndex) {
+      function changeChunk(nextIndex, focusAnswer) {
         var chunkCount = getChunkCount();
         if (nextIndex < 0 || nextIndex >= chunkCount || nextIndex === state.chunkIndex) return;
         clearPracticeForNavigation();
         state.chunkIndex = nextIndex;
         els.rangeSelect.value = String(nextIndex);
         renderPractice();
+        persistLibrary();
 
+        if (focusAnswer === false) return;
         window.requestAnimationFrame(function () {
           var firstInput = els.practiceTableBody.querySelector('.answer-input');
           if (firstInput) firstInput.focus();
@@ -2409,7 +2742,7 @@
         var practice = getRowPractice(record.id);
         practice.value = input.value;
         var normalized = normalizeAnswer(input.value);
-        var accepted = getSelectedFieldIndexes().map(function (fieldIndex) {
+        var accepted = (state.answerField < 0 ? getSelectedFieldIndexes() : [state.answerField]).map(function (fieldIndex) {
           return normalizeAnswer(record.fields[fieldIndex] || '');
         }).filter(Boolean);
         practice.result = normalized && accepted.indexOf(normalized) >= 0 ? 'correct' : 'incorrect';
@@ -2422,13 +2755,14 @@
         input.setAttribute('aria-invalid', String(practice.result === 'incorrect'));
         els.answerFeedback.textContent = 'Row ' + (state.chunkIndex * state.chunkSize + localIndex + 1) + ': ' + practice.result + '.';
 
-        var nextInput = els.practiceTableBody.querySelector('.answer-input[data-local-index="' + (localIndex + 1) + '"]');
+        var nextInput = Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input:not(:disabled)')).find(function (item) { return Number(item.dataset.localIndex) > localIndex; });
         if (nextInput) {
           nextInput.focus();
           nextInput.select();
         } else {
           input.blur();
-          showToast('Range complete. Review or continue to the next group.', practice.result === 'correct' ? 'success' : 'info');
+          var checked = chunk.every(function (row) { return Boolean(getRowPractice(row.id).result); });
+          showToast(checked ? 'All answers checked. Review or continue when ready.' : 'End of group. Continue reviewing at your own pace.', 'info');
         }
       }
 
@@ -2446,6 +2780,131 @@
         cancelSpeech();
 
         renderPractice();
+      }
+
+      function toggleColumn(fieldIndex) {
+        if (!state.fields[fieldIndex] || !state.fields[fieldIndex].enabled) return;
+        var wasVisible = state.revealAll || state.fields[fieldIndex].visible;
+        if (state.revealAll) state.fields.forEach(function (field) { if (field.enabled) field.visible = true; });
+        state.revealAll = false;
+        state.practice.forEach(function (practice) { practice.revealed = false; });
+        state.fields[fieldIndex].visible = !wasVisible;
+        cancelSpeech();
+        renderPractice();
+        persistLibrary();
+        var button = els.practiceTableHead.querySelector('[data-column-toggle="' + fieldIndex + '"]');
+        if (button) button.focus();
+      }
+
+      function repeatGroup() {
+        if (!library.preferences.repeatPasses || !state.activeRows.length) return;
+        state.practice.clear();
+        cancelSpeech();
+        renderPractice();
+        var input = els.practiceTableBody.querySelector('.answer-input');
+        if (input) input.focus();
+        showToast('Same group, same order. Column visibility has been kept.', 'info');
+      }
+
+      function rememberAnswer(input) {
+        if (input && input.matches('.answer-input')) state.lastAnswer = { id: input.id, start: input.selectionStart, end: input.selectionEnd };
+      }
+
+      function renderUsefulKeys() {
+        els.usefulKeys.hidden = !library.preferences.keys || !state.activeRows.length;
+        els.keysButton.setAttribute('aria-pressed', String(library.preferences.keys));
+        els.keyLanguage.value = library.preferences.keyLanguage;
+        var letters = usefulLetters[library.preferences.keyLanguage] || [];
+        els.keyButtons.innerHTML = letters.map(function (letter) {
+          var value = els.uppercaseKeys.checked ? (letter === 'ß' ? 'ẞ' : letter.toLocaleUpperCase()) : letter;
+          return '<button class="key-button" type="button" data-letter="' + escapeAttr(value) + '" aria-label="Insert ' + escapeAttr(value) + '">' + escapeHtml(value) + '</button>';
+        }).join('');
+        els.keyHint.textContent = letters.length ? 'Choose an answer field, then insert a letter at the cursor.' : 'No extra letters are needed in this panel for this language.';
+      }
+
+      function toggleUsefulKeys() {
+        library.preferences.keys = !library.preferences.keys;
+        renderUsefulKeys();
+        persistLibrary();
+      }
+
+      function insertUsefulLetter(letter) {
+        var last = state.lastAnswer;
+        var input = last && document.getElementById(last.id);
+        if (!input || input.disabled) { showToast('Choose an editable answer field first.', 'info'); return; }
+        input.focus();
+        input.setSelectionRange(last.start, last.end);
+        input.setRangeText(letter, last.start, last.end, 'end');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        rememberAnswer(input);
+      }
+
+      function renderVoiceOptions() {
+        refreshVoices();
+        var locale = els.previewLanguage.value;
+        var preferred = selectBestVoice(locale);
+        var voices = availableVoices.filter(function (voice) { return languageFamily(voice.lang) === languageFamily(locale); });
+        voices.sort(function (a, b) {
+          var aExact = normalizeLocale(a.lang) === normalizeLocale(locale);
+          var bExact = normalizeLocale(b.lang) === normalizeLocale(locale);
+          return Number(bExact) - Number(aExact) || rankVoice(b, locale) - rankVoice(a, locale);
+        });
+        els.voiceDescription.textContent = preferred ? 'Automatic choice: ' + preferred.name + ' · ' + preferred.lang + '. Natural and enhanced voices are preferred when available for this locale.' : 'No matching voices are currently listed. Your browser will try its language default at playback time.';
+        els.voiceList.innerHTML = voices.length ? voices.map(function (voice, index) { return '<li>' + (index === 0 ? 'Preferred: ' : '') + escapeHtml(voice.name) + ' · ' + escapeHtml(voice.lang) + '</li>'; }).join('') : '<li>No voices currently listed for this language.</li>';
+      }
+
+      function openSettings() {
+        els.speechRate.value = String(library.preferences.rate);
+        els.repeatPasses.checked = library.preferences.repeatPasses;
+        els.enableShortcuts.checked = library.preferences.shortcuts;
+        els.answerField.innerHTML = '<option value="-1">Any included field</option>' + getSelectedFieldIndexes().map(function (index) { return '<option value="' + index + '">' + escapeHtml(state.fields[index].name) + '</option>'; }).join('');
+        els.answerField.value = String(state.answerField);
+        els.answerField.disabled = !state.activeRows.length;
+        els.settingsDialog.showModal();
+        els.settingsDialog.scrollTop = 0;
+        renderVoiceOptions();
+      }
+
+      function exportLibrary() {
+        saveCurrentDeck();
+        library.session = { deck: state.activeDeck, chunk: state.chunkIndex, view: els.practiceView.hidden ? 'source' : 'practice' };
+        var blob = new Blob([JSON.stringify(library, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'lingodeck-library-' + new Date().toISOString().slice(0, 10) + '.json';
+        link.click();
+        window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      }
+
+      function hasShortcutModifier(event) {
+        return event.ctrlKey || event.metaKey || event.altKey || (event.getModifierState && event.getModifierState('AltGraph'));
+      }
+
+      function handleShortcut(event) {
+        if (!library.preferences.shortcuts || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || hasShortcutModifier(event)) return;
+        var target = event.target;
+        if (target instanceof Element && (target.closest('input, textarea, select') || target.isContentEditable || target.closest('[contenteditable]:not([contenteditable="false"])'))) return;
+        if (document.querySelector('dialog[open]') || !els.deckMenu.hidden) return;
+        if (event.key === '?') { event.preventDefault(); openSettings(); return; }
+        if (els.practiceView.hidden || !state.activeRows.length) return;
+        var key = event.key.toLocaleLowerCase();
+        var action = null;
+        if ((key === '[' || key === 'b') && state.chunkIndex > 0) action = function () { changeChunk(state.chunkIndex - 1, false); };
+        if ((key === ']' || key === 'n') && state.chunkIndex < getChunkCount() - 1) action = function () { changeChunk(state.chunkIndex + 1, false); };
+        if (/^[1-9]$/.test(key)) {
+          var index = getSelectedFieldIndexes()[Number(key) - 1];
+          if (index !== undefined) action = function () { toggleColumn(index); };
+        }
+        if (key === 'v') action = function () { els.revealAllButton.click(); };
+        if (key === 'f') action = openFieldsDialog;
+        if (key === 'k') action = toggleUsefulKeys;
+        if (key === 'p' && library.preferences.repeatPasses) action = repeatGroup;
+        if (key === 'r' && state.lastSpeech) {
+          var replay = els.practiceTableBody.querySelector('[data-speak-row="' + state.lastSpeech.row + '"][data-speak-field="' + state.lastSpeech.field + '"]');
+          if (replay && getCurrentChunk()[state.lastSpeech.row] && getCurrentChunk()[state.lastSpeech.row].id === state.lastSpeech.id) action = function () { cancelSpeech(); replay.click(); };
+        }
+        if (action) { event.preventDefault(); action(); }
       }
 
       function normalizeLocale(locale) {
@@ -2534,15 +2993,19 @@
       }
 
       async function speakField(localIndex, fieldIndex, button) {
-        if (!('speechSynthesis' in window)) {
-          showToast('Speech playback is not supported in this browser.', 'error');
-          return;
-        }
-
         var record = getCurrentChunk()[localIndex];
         if (!record) return;
         var text = stripHtml(record.fields[fieldIndex] || '');
         if (!text) return;
+        state.lastSpeech = { row: localIndex, field: fieldIndex, id: record.id };
+        return playSpeech(text, state.fields[fieldIndex].language, button);
+      }
+
+      async function playSpeech(text, locale, button) {
+        if (!('speechSynthesis' in window)) {
+          showToast('Speech playback is not supported in this browser.', 'error');
+          return;
+        }
 
         if (state.speechButton === button) {
           cancelSpeech();
@@ -2559,14 +3022,13 @@
 
         function startUtterance(localOnly, excludedName) {
           if (token !== state.speechToken || state.speechButton !== button) return;
-          var locale = state.fields[fieldIndex].language;
           var voice = selectBestVoice(locale, {
             localOnly: localOnly,
             excludeName: excludedName || ''
           });
           var utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = locale;
-          utterance.rate = 1;
+          utterance.rate = library.preferences.rate;
           utterance.pitch = 1;
           utterance.volume = 1;
           if (voice) utterance.voice = voice;
@@ -2615,8 +3077,10 @@
       function resetPractice() {
         state.practice.clear();
         state.revealAll = false;
+        state.fields.forEach(function (field) { field.visible = false; });
         cancelSpeech();
         renderPractice();
+        persistLibrary();
         showToast('This practice range has been reset.', 'info');
       }
 
@@ -2652,10 +3116,12 @@
         state.fields.forEach(function (field, index) {
           field.enabled = Boolean(state.tempEnabledFields[index]);
         });
-        state.practice.clear();
-        state.revealAll = false;
+        state.practice.forEach(function (practice) { practice.result = ''; });
+        if (state.answerField >= 0 && !state.fields[state.answerField].enabled) state.answerField = -1;
+        cancelSpeech();
         els.fieldsDialog.close();
         renderPractice();
+        persistLibrary();
         showToast('Practice fields updated.', 'success');
       }
 
@@ -2674,6 +3140,7 @@
 
       [els.sourceTab, els.practiceTab].forEach(function (tab, index, tabs) {
         tab.addEventListener('keydown', function (event) {
+          if (hasShortcutModifier(event) || event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
           var targetIndex = index;
           if (event.key === 'ArrowRight') targetIndex = (index + 1) % tabs.length;
           else if (event.key === 'ArrowLeft') targetIndex = (index - 1 + tabs.length) % tabs.length;
@@ -2689,7 +3156,7 @@
 
       els.parseButton.addEventListener('click', handleParse);
       els.rawInput.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') {
+        if (event.key === 'Enter' && !hasShortcutModifier(event) && !event.shiftKey && !event.isComposing && event.keyCode !== 229 && !event.repeat && !event.defaultPrevented) {
           event.preventDefault();
           handleParse();
         }
@@ -2747,7 +3214,7 @@
       });
 
       document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && !els.deckMenu.hidden) {
+        if (event.key === 'Escape' && !hasShortcutModifier(event) && !event.isComposing && event.keyCode !== 229 && !event.defaultPrevented && !els.deckMenu.hidden) {
           closeDeckMenu();
           els.deckTrigger.focus();
         }
@@ -2760,6 +3227,7 @@
         if (!input) return;
         var index = Number(input.getAttribute('data-field-name'));
         state.fields[index].name = input.value.trim() || 'Field ' + (index + 1);
+        scheduleSave();
       });
 
       els.sourceTableHead.addEventListener('change', function (event) {
@@ -2767,6 +3235,7 @@
         if (languageSelect) {
           var index = Number(languageSelect.getAttribute('data-field-language'));
           state.fields[index].language = languageSelect.value;
+          scheduleSave();
           showToast(state.fields[index].name + ' speech set to ' + languageSelect.options[languageSelect.selectedIndex].text + '.', 'info');
           return;
         }
@@ -2795,7 +3264,13 @@
 
       els.revealAllButton.addEventListener('click', function () {
         state.revealAll = !state.revealAll;
+        if (!state.revealAll) {
+          state.fields.forEach(function (field) { field.visible = false; });
+          state.practice.forEach(function (practice) { practice.revealed = false; });
+        }
+        cancelSpeech();
         renderPractice();
+        persistLibrary();
       });
 
       els.resetButton.addEventListener('click', resetPractice);
@@ -2832,11 +3307,12 @@
         wrap.classList.remove('is-correct', 'is-incorrect');
         wrap.querySelector('.answer-mark').textContent = '';
         input.setAttribute('aria-invalid', 'false');
+        rememberAnswer(input);
       });
 
       els.practiceTableBody.addEventListener('keydown', function (event) {
         var input = event.target.closest('.answer-input');
-        if (!input || event.key !== 'Enter' || event.isComposing) return;
+        if (!input || event.key !== 'Enter' || event.isComposing || event.keyCode === 229 || event.repeat || event.defaultPrevented || hasShortcutModifier(event) || event.shiftKey) return;
         event.preventDefault();
         checkAnswer(Number(input.getAttribute('data-local-index')));
       });
@@ -2858,10 +3334,80 @@
         }
       });
 
+      els.practiceTableHead.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-column-toggle]');
+        if (button) toggleColumn(Number(button.dataset.columnToggle));
+      });
+      ['focusin', 'focusout', 'select', 'keyup', 'pointerup'].forEach(function (name) {
+        els.practiceTableBody.addEventListener(name, function (event) { rememberAnswer(event.target); });
+      });
+      document.addEventListener('selectionchange', function () { rememberAnswer(document.activeElement); });
+      els.keysButton.addEventListener('click', toggleUsefulKeys);
+      els.keyLanguage.innerHTML = languages.map(function (language) {
+        var supported = Object.hasOwn(usefulLetters, language.code);
+        return '<option value="' + language.code + '"' + (supported ? '' : ' disabled') + '>' + escapeHtml(language.label) + (supported ? '' : ' · use your system input method') + '</option>';
+      }).join('');
+      els.keyLanguage.value = library.preferences.keyLanguage;
+      els.keyLanguage.addEventListener('change', function () {
+        library.preferences.keyLanguage = els.keyLanguage.value;
+        renderUsefulKeys();
+        persistLibrary();
+      });
+      els.uppercaseKeys.addEventListener('change', renderUsefulKeys);
+      els.keyButtons.addEventListener('pointerdown', function (event) { if (event.target.closest('[data-letter]')) event.preventDefault(); });
+      els.keyButtons.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-letter]');
+        if (button) insertUsefulLetter(button.dataset.letter);
+      });
+      els.repeatButton.addEventListener('click', repeatGroup);
+      els.completeDeckButton.addEventListener('click', function () { completionAction(false); });
+      els.undoCompletionButton.addEventListener('click', function () { completionAction(true); });
+      els.libraryFilter.addEventListener('change', renderDeckMenu);
+      els.deleteDeckButton.addEventListener('click', deleteSelectedDeck);
+      els.cancelImportButton.addEventListener('click', function () { els.importDialog.close('cancel'); });
+      els.confirmImportButton.addEventListener('click', function () { els.importDialog.close('update'); });
+      els.settingsButton.addEventListener('click', openSettings);
+      els.closeSettingsButton.addEventListener('click', function () { els.settingsDialog.close(); });
+      els.settingsDialog.addEventListener('close', function () { cancelSpeech(); });
+      els.settingsDialog.addEventListener('click', function (event) { if (event.target === els.settingsDialog) els.settingsDialog.close(); });
+      els.previewLanguage.innerHTML = languageOptions('en-US');
+      els.previewLanguage.addEventListener('change', function () { cancelSpeech(); renderVoiceOptions(); });
+      els.previewVoiceButton.addEventListener('click', function () {
+        var previews = { 'en-US': 'A little practice every day.', 'es-ES': 'Un poco de práctica cada día.', 'de-DE': 'Jeden Tag ein wenig üben.', 'fr-FR': 'Un peu de pratique chaque jour.', 'pt-BR': 'Um pouco de prática todos os dias.', 'nb-NO': 'Litt øvelse hver dag.', 'it-IT': 'Un po’ di pratica ogni giorno.', 'ko-KR': '매일 조금씩 연습하세요.', 'ja-JP': '毎日少しずつ練習しましょう。' };
+        playSpeech(previews[els.previewLanguage.value], els.previewLanguage.value, els.previewVoiceButton);
+      });
+      els.speechRate.addEventListener('change', function () { library.preferences.rate = Number(els.speechRate.value); persistLibrary(); });
+      els.repeatPasses.addEventListener('change', function () { library.preferences.repeatPasses = els.repeatPasses.checked; updatePracticeControls(); persistLibrary(); });
+      els.enableShortcuts.addEventListener('change', function () { library.preferences.shortcuts = els.enableShortcuts.checked; persistLibrary(); });
+      els.answerField.addEventListener('change', function () { state.answerField = Number(els.answerField.value); state.practice.forEach(function (practice) { practice.result = ''; }); renderPractice(); persistLibrary(); });
+      els.backupButton.addEventListener('click', exportLibrary);
+      els.restoreBackupLabel.addEventListener('keydown', function (event) {
+        if ((event.key === 'Enter' || event.key === ' ') && !hasShortcutModifier(event)) { event.preventDefault(); els.backupInput.click(); }
+      });
+      els.backupInput.addEventListener('change', async function () {
+        var file = els.backupInput.files && els.backupInput.files[0];
+        if (!file) return;
+        try {
+          var restored = validateLibrary(JSON.parse(await file.text()));
+          if (library.records.length && !window.confirm('Replace this browser’s library with the backup? Back up the current library first if you want to keep it.')) return;
+          library = restored;
+          restoreLibraryUI();
+          await persistLibrary();
+          els.settingsDialog.close();
+          showToast('Library backup restored.', 'success');
+        } catch (error) {
+          showToast(error.message || 'The backup could not be restored.', 'error');
+        } finally { els.backupInput.value = ''; }
+      });
+      document.addEventListener('keydown', handleShortcut);
+      window.addEventListener('pagehide', persistLibrary);
+      document.addEventListener('visibilitychange', function () { if (document.hidden) persistLibrary(); });
+
       if ('speechSynthesis' in window) {
         refreshVoices();
         if (typeof window.speechSynthesis.addEventListener === 'function') {
           window.speechSynthesis.addEventListener('voiceschanged', refreshVoices);
+          window.speechSynthesis.addEventListener('voiceschanged', function () { if (els.settingsDialog.open) renderVoiceOptions(); });
         } else {
           window.speechSynthesis.onvoiceschanged = refreshVoices;
         }
@@ -2879,7 +3425,7 @@
           {
             name: 'parse_anki_data',
             title: 'Parse Anki data',
-            description: 'Replace the source input with Anki-formatted text and parse its records, decks, and fields.',
+            description: 'Import Anki-formatted text into the local deck library. Updating existing decks requires confirmation.',
             inputSchema: {
               type: 'object',
               properties: {
@@ -2889,18 +3435,19 @@
               additionalProperties: false
             },
             annotations: { readOnlyHint: false, untrustedContentHint: true },
-            execute: function (input) {
+            execute: async function (input) {
               if (!input || typeof input.data !== 'string' || !input.data.trim()) {
                 throw new Error('data must be a non-empty string');
               }
               parseData(input.data);
               els.rawInput.value = normalizeUploadedText(input.data);
-              handleParse();
+              var result = await handleParse();
+              if (!result) throw new Error('Import was canceled or the library is not ready.');
               switchView('source');
               return {
-                records: state.records.length,
-                decks: state.decks.slice(),
-                fields: state.fields.length
+                records: result.records.length,
+                decks: Array.from(new Set(result.records.map(function (record) { return record.deck; }))),
+                fields: result.maxFields
               };
             }
           },
@@ -2966,6 +3513,7 @@
               state.chunkIndex = Math.floor((input.row - 1) / state.chunkSize);
               els.rangeSelect.value = String(state.chunkIndex);
               switchView('practice');
+              persistLibrary();
               var start = state.chunkIndex * state.chunkSize + 1;
               return {
                 start: start,
@@ -2989,6 +3537,7 @@
       updateTopStatus();
       updatePracticeControls();
       registerAgentTools();
+      initializeLibrary();
     }());
   </script>
 </body>
