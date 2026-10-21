@@ -389,7 +389,7 @@ test('practice headers expose aligned, accessible icon controls even when their 
 });
 
 test('row reference toggles sit beside every item number and independently preserve existing reveal behavior', async t => {
-  const { page } = await setup(t);
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
   await importData(page); await practice(page);
   const rows = page.locator('#practiceTableBody tr');
   assert.equal(await rows.count(), 5);
@@ -403,13 +403,23 @@ test('row reference toggles sit beside every item number and independently prese
     const cell = rows.nth(i).locator('td').first();
     assert.equal(await cell.locator('.item-number').textContent(), String(i + 1));
     assert.equal(await cell.locator('[data-reveal-row]').count(), 1);
+    assert.equal(await cell.locator('.view-toggle').textContent(), '', 'Reference controls are icon-only');
+    assert.equal(await cell.locator('.view-toggle svg[aria-hidden="true"]').count(), 1);
+    assert.equal(await cell.locator('.view-toggle').getAttribute('aria-label'), `View reference for row ${i + 1}`);
+    assert.equal(await cell.locator('.view-toggle').getAttribute('title'), `View reference for row ${i + 1}`);
     const [number, button] = await Promise.all([cell.locator('.item-number').boundingBox(), cell.locator('.view-toggle').boundingBox()]);
+    assert.ok(button.width >= 74 && button.height >= 35, 'Existing desktop click area is preserved');
     assert.ok(button.x > number.x + number.width, 'The toggle is beside, not below, the item number');
     assert.ok(Math.abs(number.y + number.height / 2 - button.y - button.height / 2) < 1);
   }
+  const hiddenIcon = await rows.nth(0).locator('.view-toggle svg').innerHTML();
   await rows.nth(0).getByRole('button', { name: 'View reference for row 1', exact: true }).focus();
   await page.keyboard.press('Enter');
   assert.equal(await rows.nth(0).locator('.view-toggle').getAttribute('aria-pressed'), 'true');
+  assert.equal(await rows.nth(0).locator('.view-toggle').textContent(), '');
+  assert.equal(await rows.nth(0).locator('.view-toggle').getAttribute('aria-label'), 'Hide reference for row 1');
+  assert.equal(await rows.nth(0).locator('.view-toggle').getAttribute('title'), 'Hide reference for row 1');
+  assert.notEqual(await rows.nth(0).locator('.view-toggle svg').innerHTML(), hiddenIcon, 'Revealing switches from eye to eye-off');
   assert.equal(await rows.nth(0).locator('.reference-content').count(), 3);
   assert.equal(await input.inputValue(), '', 'Revealing retains the existing answer-clearing behavior');
   assert.equal(await input.isDisabled(), true);
@@ -418,6 +428,9 @@ test('row reference toggles sit beside every item number and independently prese
   assert.equal(await rows.nth(1).locator('.reference-content').count(), 0);
   assert.equal(await rows.nth(0).locator('.view-toggle').evaluate(element => document.activeElement === element), true, 'Focus survives rendering');
   await page.keyboard.press('Space');
+  assert.equal(await rows.nth(0).locator('.view-toggle').textContent(), '');
+  assert.equal(await rows.nth(0).locator('.view-toggle').getAttribute('aria-label'), 'View reference for row 1');
+  assert.equal(await rows.nth(0).locator('.view-toggle svg').innerHTML(), hiddenIcon, 'Hiding restores the eye icon');
   assert.equal(await rows.nth(0).locator('.reference-content').count(), 0);
   assert.equal(await input.isDisabled(), false);
   await rows.nth(1).locator('.view-toggle').click();
@@ -653,6 +666,7 @@ test('themes, collapsed headers, and icon touch targets remain usable on narrow 
       await page.locator(selector).scrollIntoViewIfNeeded();
       const box = await page.locator(selector).boundingBox();
       assert.ok(box.width >= 44 && box.height >= 44, `Touch target ${selector} is at least 44px`);
+      if (selector === '[data-reveal-row="0"]') assert.ok(box.width >= 74, 'Icon-only row buttons retain their reserved click area on touch screens');
     }
     await page.locator('#settingsButton').click();
     for (const id of gradientThemeIds) {

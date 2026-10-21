@@ -985,6 +985,11 @@
       font-weight: 750;
     }
 
+    .practice-number-col .view-toggle {
+      min-width: 74px;
+      flex-shrink: 0;
+    }
+
     .answer-wrap {
       position: relative;
     }
@@ -2844,8 +2849,8 @@
 
           return '<tr data-record-id="' + escapeAttr(record.id) + '" style="animation-delay:' + (localIndex * 35) + 'ms">' +
             '<td class="number-col practice-number-col"><div class="item-controls"><span class="item-number">' + rowNumber + '</span>' +
-              '<button class="view-toggle" type="button" data-reveal-row="' + localIndex + '" aria-pressed="' + String(practice.revealed) + '" aria-label="' + (practice.revealed ? 'Hide' : 'View') + ' reference for row ' + rowNumber + '">' +
-                (practice.revealed ? icons.eyeOff + ' Hide' : icons.eye + ' View') +
+              '<button class="view-toggle" type="button" data-reveal-row="' + localIndex + '" aria-pressed="' + String(practice.revealed) + '" aria-label="' + (practice.revealed ? 'Hide' : 'View') + ' reference for row ' + rowNumber + '" title="' + (practice.revealed ? 'Hide' : 'View') + ' reference for row ' + rowNumber + '">' +
+                (practice.revealed ? icons.eyeOff : icons.eye) +
               '</button>' +
             '</div></td>' +
             '<td class="answer-col' + (state.answerCollapsed ? ' is-collapsed' : '') + '">' +
