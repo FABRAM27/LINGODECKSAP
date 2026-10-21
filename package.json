@@ -1,0 +1,16 @@
+{
+  "name": "bellasprak",
+  "private": true,
+  "description": "Dependency-free multilingual vocabulary familiarization app; npm is used only for development tests.",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/modules.test.cjs tests/browser.test.cjs",
+    "test:unit": "node --test tests/modules.test.cjs",
+    "test:browser": "node --test --test-concurrency=1 tests/browser.test.cjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

@@ -7,8 +7,9 @@ recall and spaced repetition.
 ## Open the app
 
 Download/extract the repository and open `lingodeck.html` in a modern browser.
-The app needs no installation, build step, account, or backend. Browser voices
-and online speech engines may need an internet connection.
+Keep the `assets/` folder beside that HTML file; it is no longer a single-file
+application. The app needs no installation, build step, account, or backend.
+Browser voices and online speech engines may need an internet connection.
 
 For a consistent local web address, an optional development server is:
 
@@ -24,6 +25,34 @@ and internal browser-storage ID are intentionally unchanged so existing links an
 saved libraries keep working. Existing JSON backups remain compatible; new
 downloads use the `bellasprak-library-…` name. `PROJECT_CONTEXT.md` retains the
 original development conversations and historical product name.
+
+## Repository structure
+
+```text
+lingodeck.html              Page markup; existing launch URL is preserved
+assets/
+  css/app.css              Styles, layout, responsive rules, base color tokens
+  icons/favicon.svg        Existing application icon
+  js/config.js             Languages, themes, Useful Keys, icons, sample vocabulary
+  js/content.js            Native import parser, HTML safety, answer normalization
+  js/library.js            Backup validation, IndexedDB, revisions, serialized saves
+  js/speech.js             Voice selection, playback queue, cancellation, fallback
+  js/app.js                Private UI state, rendering, events, practice, integration
+docs/
+  architecture.md          Module boundaries and compatibility rules
+  pwa-assessment.md        Optional free-hosted Windows PWA assessment (not implemented)
+tests/
+  modules.test.cjs          Fast parser, backup, voice-selection, and asset checks
+  browser.test.cjs          Browser regressions, persistence, audio, and responsive UX
+  helpers/static-server.cjs Real-file HTTP server used only by the tests
+PROJECT_CONTEXT.md         Original development history, kept unchanged
+package.json               Optional development/test commands; no runtime packages
+```
+
+The five JavaScript files load in order using classic deferred scripts. This
+keeps direct local opening possible without a module server, network-fetched
+configuration, framework, or bundler. See [Architecture](docs/architecture.md)
+before changing module boundaries or storage behavior.
 
 ## Import and practice
 
@@ -46,7 +75,8 @@ original development conversations and historical product name.
 - Typing is optional. Enter checks a typed answer and advances to the next
   editable row. Settings can restrict checking to one included field; the default
   continues to accept any included field.
-- Each item's **View / Hide** control is directly beside its number. It reveals
+- Each item's icon-only **eye / eye-off** control is directly beside its number,
+  with View/Hide tooltips and accessible labels. It reveals
   or hides only that row's reference content, using the same visibility state as
   before; revealing still clears/disables that row's answer. There is no separate
   Reference-controls column. Column visibility and **Reveal all** continue to
@@ -153,12 +183,22 @@ overwriting the newer library. Reload or export that tab's work before continuin
 
 ## Development checks
 
-The application itself has no package dependencies. The browser regression suite
-requires Node.js, the `playwright` package, and Chromium. In an environment with
-those tools available:
+The application has no runtime dependencies. Development tests use Node.js 20+
+and the existing Playwright browser-test dependency, now pinned in
+`package-lock.json`. To set up a development checkout (not required to use the app):
 
 ```sh
-node --test --test-concurrency=1 tests/lingodeck.test.cjs
+npm ci
+npx playwright install chromium
+npm test
+```
+
+`npm run test:unit` runs checks that need no browser. `npm run test:browser` runs
+the interactive regression suite. With Node.js and Playwright already available,
+you can also run the tests directly:
+
+```sh
+node --test --test-concurrency=1 tests/modules.test.cjs tests/browser.test.cjs
 ```
 
 Set `CHROMIUM_PATH` if Chromium is neither installed at `/usr/bin/chromium` nor
@@ -167,3 +207,20 @@ voice inventories and simulated engine failures; listening checks should also be
 performed in the browser and device used for studying.
 The direct-file test reports a skip when a managed browser policy blocks `file:`
 navigation; that restriction does not count as a successful direct-file check.
+
+## Optional browser installation on Windows
+
+PWA installation has **not** been implemented or deployed. The recommendation is
+an optional, free GitHub Pages version of this same app, with a web manifest and
+a small offline cache worker added only after approval. No paid hosting,
+subscriptions, accounts, paid speech APIs, or personal-data backend are proposed.
+
+Imported decks, preferences, and completion data would stay in the installing
+browser profile's IndexedDB. Installing would not copy them to GitHub or sync
+between Edge and Chrome. Existing online voices may still send spoken text to
+their speech provider and require connectivity. The downloadable folder would
+remain available alongside the optional hosted version.
+
+See the [Windows PWA feasibility assessment](docs/pwa-assessment.md) for
+installation, free hosting, offline speech limits, data migration, update safety,
+and the required Edge/Chrome-on-Windows validation before release.

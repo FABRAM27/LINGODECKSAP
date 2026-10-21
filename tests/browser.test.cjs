@@ -2,17 +2,14 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const http = require('node:http');
 const { chromium } = require('playwright');
+const { createStaticServer } = require('./helpers/static-server.cjs');
 const gradientThemeIds = ['arctic-ice', 'golden-sunset', 'lavender-dream', 'mint-serenity', 'midnight-aurora'];
 const themeIds = ['default', 'ocean', 'forest', 'lavender', 'warm-neutral', ...gradientThemeIds];
 
 let browser, server, origin;
 before(async () => {
-  server = http.createServer((request, response) => {
-    response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    response.end(fs.readFileSync(path.join(__dirname, '..', 'lingodeck.html')));
-  });
+  server = createStaticServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
   const executablePath = process.env.CHROMIUM_PATH || (fs.existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
@@ -104,6 +101,80 @@ test('native imports retain order, add to the library, and require confirmation 
   await practice(page);
   assert.equal(await page.locator('#sourceTableBody tr td:nth-child(2)').textContent(), 'dog');
   assert.equal(await page.locator('#recordCount').textContent(), '19');
+});
+
+test('external assets load with their real MIME types under a nested hosting path', async t => {
+  const { page } = await setup(t);
+  const nested = createStaticServer('/preview/');
+  await new Promise(resolve => nested.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => nested.close(resolve)));
+  const base = `http://127.0.0.1:${nested.address().port}/preview/`;
+  const loaded = [];
+  page.on('response', response => {
+    if (response.url().startsWith(base + 'assets/')) loaded.push({ url: response.url(), status: response.status(), type: response.headers()['content-type'] });
+  });
+  await page.goto(base + 'lingodeck.html'); await ready(page);
+  for (const name of ['config', 'content', 'library', 'speech', 'app']) {
+    assert.ok(loaded.some(item => item.url.endsWith(`/assets/js/${name}.js`) && item.status === 200 && item.type.startsWith('text/javascript')));
+  }
+  assert.ok(loaded.some(item => item.url.endsWith('/assets/css/app.css') && item.status === 200 && item.type.startsWith('text/css')));
+  assert.equal(await page.locator('.brand-name').textContent(), 'Bellasprak');
+  await importData(page); await practice(page);
+  await page.locator('[data-reveal-row="0"]').click();
+  assert.equal(await page.locator('.reference-content').count(), 3);
+  assert.equal(await page.locator('link[rel="manifest"]').count(), 0);
+  assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0, 'PWA support is assessed, not implemented');
+});
+
+test('the reorganized app reopens the legacy IndexedDB library and increments its existing revision', async t => {
+  const context = await browser.newContext();
+  t.after(() => context.close());
+  const page = await context.newPage();
+  // Establish the same origin without starting an app or creating a new database.
+  await page.goto(origin + '/assets/icons/favicon.svg');
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('lingodeck-library', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('library');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('library', 'readwrite');
+      transaction.objectStore('library').put({
+        version: 1, revision: 42,
+        records: Array.from({ length: 6 }, (_, i) => ({ id: `legacy-${i}`, noteType: 'Basic', deck: 'Legacy::German', fields: [`word ${i + 1}`, `Wort ${i + 1}`] })),
+        deckSettings: { 'Legacy::German': { fields: [{ name: 'English', language: 'en-US', enabled: true, visible: true }, { name: 'German', language: 'de-DE', enabled: true, visible: false }], answerField: 1, answerCollapsed: true, chunk: 1 } },
+        completed: { 'Legacy::German': '2026-10-01T12:00:00.000Z' },
+        preferences: { rate: 0.75, repeatPasses: true, shortcuts: true, keys: true, keyLanguage: 'de-DE', theme: 'ocean' },
+        session: { deck: 'Legacy::German', chunk: 1, view: 'practice' }
+      }, 'current');
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.goto(origin + '/lingodeck.html'); await ready(page);
+  assert.equal(await page.locator('#recordCount').textContent(), '6');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'ocean');
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['6']);
+  assert.equal(await page.locator('.reference-text').textContent(), 'word 6');
+  assert.equal(await page.locator('[data-column-toggle="1"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('.answer-input').isVisible(), false);
+  assert.equal(await page.locator('#completeDeckButton').textContent(), 'Reviewed today');
+  assert.equal(await page.locator('#repeatButton').isVisible(), true);
+  await page.locator('#settingsButton').click();
+  assert.equal(await page.locator('#speechRate').inputValue(), '0.75');
+  assert.equal(await page.locator('#answerField').inputValue(), '1');
+  await page.locator('[data-theme-choice="mint-serenity"]').click();
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.revision > 42 && saved.preferences.theme === 'mint-serenity' && saved.records.length === 6;
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'mint-serenity');
+  assert.equal(await page.locator('#recordCount').textContent(), '6');
 });
 
 test('column visibility complements Fields and Repeat group preserves configuration and order', async t => {
@@ -689,7 +760,7 @@ test('themes, collapsed headers, and icon touch targets remain usable on narrow 
 });
 
 test('older library backups preserve their content and settings while new appearance preferences round-trip', async t => {
-  const { page } = await setup(t);
+  const { page } = await setup(t, true);
   const oldLibrary = {
     version: 1, records: [{ id: 'old-1', noteType: 'Basic', deck: 'Saved::Deck', fields: ['bird', 'Vogel'] }],
     deckSettings: { 'Saved::Deck': { fields: [{ name: 'English', language: 'en-US', enabled: true, visible: true }, { name: 'German', language: 'de-DE', enabled: true, visible: false }], answerField: 1, chunk: 0 } },
@@ -728,4 +799,7 @@ test('older library backups preserve their content and settings while new appear
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'midnight-aurora');
   assert.equal(await page.locator('.answer-input').first().isVisible(), false);
   assert.equal(await page.locator('#recordCount').textContent(), '1');
+  await page.locator('[data-speak-column="1"]').click();
+  await page.waitForFunction(() => speechLog.length === 1 && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false');
+  assert.deepEqual(await page.evaluate(() => speechLog[0]), { text: 'Vogel', voice: 'Microsoft Katja Online Natural', lang: 'de-DE', rate: 0.75 }, 'The speech controller reads preferences from the restored library, not the original object');
 });
