@@ -1,6 +1,6 @@
-# LingoDeck
+# Bellasprak
 
-LingoDeck prepares vocabulary for Anki through small, predictable, ordered groups,
+Bellasprak prepares vocabulary for Anki through small, predictable, ordered groups,
 visual recognition, and pronunciation. Anki remains responsible for randomized
 recall and spaced repetition.
 
@@ -18,6 +18,12 @@ python -m http.server 8765
 
 Then open `http://localhost:8765/lingodeck.html` in your browser. Keep using the
 same address and browser profile to access the same saved library.
+
+The app was previously called LingoDeck. Its launch filename (`lingodeck.html`)
+and internal browser-storage ID are intentionally unchanged so existing links and
+saved libraries keep working. Existing JSON backups remain compatible; new
+downloads use the `bellasprak-library-…` name. `PROJECT_CONTEXT.md` retains the
+original development conversations and historical product name.
 
 ## Import and practice
 
@@ -40,7 +46,11 @@ same address and browser profile to access the same saved library.
 - Typing is optional. Enter checks a typed answer and advances to the next
   editable row. Settings can restrict checking to one included field; the default
   continues to accept any included field.
-- **View** reveals a row and clears/disables its answer, as before. **Reveal all**
+- Each item's **View / Hide** control is directly beside its number. It reveals
+  or hides only that row's reference content, using the same visibility state as
+  before; revealing still clears/disables that row's answer. There is no separate
+  Reference-controls column. Column visibility and **Reveal all** continue to
+  provide broader overrides. **Reveal all**
   exposes all included references; **Hide all** hides them. **Reset** clears
   answers and hides references.
 - Settings → **Enable Repeat group** adds a Repeat group button. It clears typed
@@ -78,8 +88,19 @@ use their system input methods. The panel never changes system keyboard settings
 
 ## Appearance
 
-Settings → **Appearance** offers Default, Ocean, Forest, Lavender, and Warm
-Neutral. Swatches preview each palette; a checkmark identifies the active choice.
+Settings → **Appearance** preserves Default, Ocean, Forest, Lavender, and Warm
+Neutral, and adds five gradient palettes:
+
+- **Arctic Ice:** icy blue, soft cyan, and aqua.
+- **Golden Sunset:** muted rose, peach, and pale gold.
+- **Lavender Dream:** lavender, periwinkle, and powder blue.
+- **Mint Serenity:** sage, mint, teal, and ivory.
+- **Midnight Aurora:** dark navy, teal, and subdued violet, with matching dark
+  surfaces and native form controls.
+
+Swatches preview each palette, including gradients for the new options; a
+checkmark identifies the active choice. Gradients enhance the page background;
+content surfaces remain calm and readable.
 Changes apply immediately throughout the app and are saved with your library.
 Default preserves the original blue-and-midnight identity. Existing libraries
 and older backups default to this palette and expanded answer inputs.

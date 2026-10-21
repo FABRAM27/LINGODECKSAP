@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
+const gradientThemeIds = ['arctic-ice', 'golden-sunset', 'lavender-dream', 'mint-serenity', 'midnight-aurora'];
+const themeIds = ['default', 'ocean', 'forest', 'lavender', 'warm-neutral', ...gradientThemeIds];
 
 let browser, server, origin;
 before(async () => {
@@ -119,9 +121,9 @@ test('column visibility complements Fields and Repeat group preserves configurat
   await page.locator('#settingsButton').click();
   await page.locator('#repeatPasses').check();
   await page.locator('#closeSettingsButton').click();
-  const before = await page.locator('#practiceTableBody .number-col').allTextContents();
+  const before = await page.locator('#practiceTableBody .item-number').allTextContents();
   await page.locator('#repeatButton').click();
-  assert.deepEqual(await page.locator('#practiceTableBody .number-col').allTextContents(), before);
+  assert.deepEqual(await page.locator('#practiceTableBody .item-number').allTextContents(), before);
   assert.equal(await page.locator('.answer-input').first().inputValue(), '');
   assert.equal(await page.locator('.reference-content').count(), 5);
   assert.equal(await page.locator('[data-column-toggle]:not([data-column-toggle="answer"])').count(), 2);
@@ -386,6 +388,57 @@ test('practice headers expose aligned, accessible icon controls even when their 
   assert.ok(Math.max(...centers) - Math.min(...centers) < 1, 'Header controls align on a shared horizontal axis');
 });
 
+test('row reference toggles sit beside every item number and independently preserve existing reveal behavior', async t => {
+  const { page } = await setup(t);
+  await importData(page); await practice(page);
+  const rows = page.locator('#practiceTableBody tr');
+  assert.equal(await rows.count(), 5);
+  assert.equal(await page.locator('#practiceTableHead th').count(), 5, 'No redundant Reference-controls column');
+  assert.equal(await page.locator('.reveal-col').count(), 0);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['1', '2', '3', '4', '5']);
+  const input = rows.nth(0).locator('.answer-input');
+  await input.fill('the cause'); await input.press('Enter');
+  await rows.nth(1).locator('.answer-input').fill('keep this attempt');
+  for (let i = 0; i < 5; i++) {
+    const cell = rows.nth(i).locator('td').first();
+    assert.equal(await cell.locator('.item-number').textContent(), String(i + 1));
+    assert.equal(await cell.locator('[data-reveal-row]').count(), 1);
+    const [number, button] = await Promise.all([cell.locator('.item-number').boundingBox(), cell.locator('.view-toggle').boundingBox()]);
+    assert.ok(button.x > number.x + number.width, 'The toggle is beside, not below, the item number');
+    assert.ok(Math.abs(number.y + number.height / 2 - button.y - button.height / 2) < 1);
+  }
+  await rows.nth(0).getByRole('button', { name: 'View reference for row 1', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await rows.nth(0).locator('.view-toggle').getAttribute('aria-pressed'), 'true');
+  assert.equal(await rows.nth(0).locator('.reference-content').count(), 3);
+  assert.equal(await input.inputValue(), '', 'Revealing retains the existing answer-clearing behavior');
+  assert.equal(await input.isDisabled(), true);
+  assert.equal(await rows.nth(0).locator('.answer-mark').textContent(), '');
+  assert.equal(await rows.nth(1).locator('.answer-input').inputValue(), 'keep this attempt');
+  assert.equal(await rows.nth(1).locator('.reference-content').count(), 0);
+  assert.equal(await rows.nth(0).locator('.view-toggle').evaluate(element => document.activeElement === element), true, 'Focus survives rendering');
+  await page.keyboard.press('Space');
+  assert.equal(await rows.nth(0).locator('.reference-content').count(), 0);
+  assert.equal(await input.isDisabled(), false);
+  await rows.nth(1).locator('.view-toggle').click();
+  await rows.nth(3).locator('.view-toggle').click();
+  assert.deepEqual(await page.locator('.view-toggle').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-pressed'))), ['false', 'true', 'false', 'true', 'false']);
+  assert.equal(await page.locator('.reference-content').count(), 6);
+  await page.locator('[data-column-toggle="0"]').click();
+  assert.equal(await page.locator('.reference-content').count(), 0, 'Hiding a partially revealed column clears row overrides, as before');
+  await page.locator('[data-column-toggle="0"]').click();
+  assert.equal(await page.locator('.reference-content').count(), 5, 'Column visibility still uses the shared reveal state');
+  await rows.nth(0).locator('.view-toggle').click();
+  await rows.nth(0).locator('.view-toggle').click();
+  assert.equal(await rows.nth(0).locator('.reference-content').count(), 1, 'Hiding a row preserves explicitly visible columns');
+  await page.locator('#nextButton').click(); await page.locator('#nextButton').click();
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['11', '12', '13']);
+  assert.equal(await page.locator('.view-toggle').count(), 3);
+  await rows.nth(2).getByRole('button', { name: 'View reference for row 13', exact: true }).click();
+  assert.equal(await rows.nth(2).locator('.reference-content').count(), 3);
+  assert.equal(await rows.nth(1).locator('.reference-content').count(), 1);
+});
+
 test('collapsing answers preserves input nodes, values, validation results, and saved column preferences', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
@@ -514,7 +567,8 @@ test('appearance updates semantic tokens immediately, supports keyboard selectio
   await page.locator('#completeDeckButton').click();
   await page.locator('#settingsButton').click();
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'default');
-  for (const id of ['ocean', 'forest', 'lavender', 'warm-neutral', 'default']) {
+  assert.deepEqual(await page.locator('[data-theme-choice]').evaluateAll(buttons => buttons.map(button => button.dataset.themeChoice)), themeIds);
+  for (const id of [...themeIds.slice(1), 'default']) {
     await page.locator(`[data-theme-choice="${id}"]`).click();
     assert.equal(await page.locator('html').getAttribute('data-theme'), id);
     assert.equal(await page.locator(`[data-theme-choice="${id}"]`).getAttribute('aria-checked'), 'true');
@@ -529,8 +583,10 @@ test('appearance updates semantic tokens immediately, supports keyboard selectio
       function contrast(a, b) { const [light, dark] = [lum(rgb(a)), lum(rgb(b))].sort((a, b) => b - a); return (light + .05) / (dark + .05); }
       return {
         text: contrast('--ink', '--paper'), secondary: contrast('--ink-2', '--paper'), muted: contrast('--ink-3', '--surface-soft'),
-        primary: contrast('--on-accent', '--blue'), selected: contrast('--blue-dark', '--blue-soft'),
-        success: contrast('--success', '--success-soft'), danger: contrast('--danger', '--danger-soft'), warning: contrast('--warning', '--warning-soft')
+        primary: contrast('--on-accent', '--blue'), primaryHover: contrast('--on-accent', '--blue-dark'), selected: contrast('--blue-dark', '--blue-soft'),
+        success: contrast('--success', '--success-soft'), danger: contrast('--danger', '--danger-soft'), warning: contrast('--warning', '--warning-soft'),
+        successMark: contrast('--on-accent', '--success'), errorMark: contrast('--on-accent', '--danger'),
+        nav: contrast('--nav-text', '--nav-bg'), navSecondary: contrast('--nav-muted', '--nav-bg')
       };
     });
     for (const [name, ratio] of Object.entries(ratios)) assert.ok(ratio >= 4.5, `${id} ${name} contrast ${ratio.toFixed(2)} must reach 4.5:1`);
@@ -551,6 +607,41 @@ test('appearance updates semantic tokens immediately, supports keyboard selectio
   assert.equal(await page.locator('#recordCount').textContent(), '18');
 });
 
+test('all five gradient palettes preview their backgrounds and persist without losing the existing library', async t => {
+  const { page } = await setup(t);
+  await importData(page); await practice(page);
+  assert.match(await page.title(), /^Bellasprak —/);
+  assert.equal(await page.locator('.brand').getAttribute('aria-label'), 'Bellasprak');
+  assert.equal(await page.locator('.brand-name').textContent(), 'Bellasprak');
+  for (const id of gradientThemeIds) {
+    await page.locator('#settingsButton').click();
+    const option = page.locator(`[data-theme-choice="${id}"]`);
+    assert.equal(await option.locator('.theme-gradient-preview').count(), 1);
+    const preview = await option.locator('.theme-gradient-preview').evaluate(element => getComputedStyle(element).backgroundImage);
+    assert.match(preview, /^linear-gradient\(/);
+    await option.click();
+    const background = await page.locator('body').evaluate(element => getComputedStyle(element).backgroundImage);
+    assert.ok(background.includes(preview), `${id} uses the previewed gradient`);
+    assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), id === 'midnight-aurora' ? 'dark' : 'light');
+    assert.equal(await page.locator('.theme-swatches').count(), 5, 'Original palette previews are preserved');
+    await page.locator('#closeSettingsButton').click();
+    await page.waitForFunction(async expected => {
+      const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+      const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+      db.close(); return saved.preferences.theme === expected;
+    }, id);
+    await page.reload(); await ready(page);
+    assert.equal(await page.locator('html').getAttribute('data-theme'), id);
+    assert.equal(await page.locator('#recordCount').textContent(), '18', 'Legacy storage still contains the saved library after renaming');
+    assert.deepEqual(await page.locator('.item-number').allTextContents(), ['1', '2', '3', '4', '5']);
+  }
+  await page.locator('#settingsButton').click();
+  await page.locator('[data-theme-choice="default"]').click();
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).colorScheme), 'light');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--page-gradient').trim()), 'none');
+  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--ink').trim()), '#10172b', 'Dark token overrides are completely cleared');
+});
+
 test('themes, collapsed headers, and icon touch targets remain usable on narrow screens', async t => {
   const { page } = await setup(t, false, { hasTouch: true });
   await importData(page); await practice(page);
@@ -558,15 +649,26 @@ test('themes, collapsed headers, and icon touch targets remain usable on narrow 
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    for (const selector of ['[data-column-toggle="answer"]', '[data-column-toggle="0"]', '[data-speak-column="0"]']) {
+    for (const selector of ['[data-column-toggle="answer"]', '[data-column-toggle="0"]', '[data-speak-column="0"]', '[data-reveal-row="0"]']) {
       await page.locator(selector).scrollIntoViewIfNeeded();
       const box = await page.locator(selector).boundingBox();
       assert.ok(box.width >= 44 && box.height >= 44, `Touch target ${selector} is at least 44px`);
     }
     await page.locator('#settingsButton').click();
-    await page.locator('[data-theme-choice="lavender"]').click();
-    assert.equal(await page.evaluate(() => document.querySelector('#settingsDialog').scrollWidth <= document.querySelector('#settingsDialog').clientWidth), true);
+    for (const id of gradientThemeIds) {
+      await page.locator(`[data-theme-choice="${id}"]`).click();
+      assert.equal(await page.evaluate(() => document.querySelector('#settingsDialog').scrollWidth <= document.querySelector('#settingsDialog').clientWidth), true, `${id} settings fit at ${width}px`);
+      const optionFits = await page.locator(`[data-theme-choice="${id}"]`).evaluate(element => element.scrollWidth <= element.clientWidth);
+      assert.equal(optionFits, true, `${id} preview and name fit at ${width}px`);
+    }
     await page.locator('#closeSettingsButton').click();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const rowLayout = await page.locator('.item-controls').first().evaluate(element => {
+      const number = element.querySelector('.item-number').getBoundingClientRect();
+      const button = element.querySelector('.view-toggle').getBoundingClientRect();
+      return { gap: button.left - number.right, aligned: Math.abs(number.top + number.height / 2 - button.top - button.height / 2) < 1 };
+    });
+    assert.ok(rowLayout.gap >= 8 && rowLayout.aligned, `Row controls stay beside numbers at ${width}px`);
   }
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('.header-icon').first().evaluate(element => getComputedStyle(element).transitionDuration.split(',').every(duration => parseFloat(duration) <= .001)), true);
@@ -592,16 +694,24 @@ test('older library backups preserve their content and settings while new appear
   await page.locator('[data-column-toggle="answer"]').click();
   await page.locator('#settingsButton').click();
   assert.equal(await page.locator('#speechRate').inputValue(), '0.75');
-  await page.locator('[data-theme-choice="warm-neutral"]').click();
+  await page.locator('[data-theme-choice="midnight-aurora"]').click();
   const downloading = page.waitForEvent('download');
   await page.locator('#backupButton').click();
-  const stream = await (await downloading).createReadStream();
+  const download = await downloading;
+  assert.match(download.suggestedFilename(), /^bellasprak-library-\d{4}-\d{2}-\d{2}\.json$/);
+  const stream = await download.createReadStream();
   const chunks = []; for await (const chunk of stream) chunks.push(chunk);
   const saved = JSON.parse(Buffer.concat(chunks));
   assert.equal(saved.version, 1);
   assert.deepEqual(saved.records[0].fields, ['bird', 'Vogel']);
-  assert.equal(saved.preferences.theme, 'warm-neutral');
+  assert.equal(saved.preferences.theme, 'midnight-aurora');
   assert.equal(saved.deckSettings['Saved::Deck'].answerCollapsed, true);
   assert.equal(saved.deckSettings['Saved::Deck'].answerField, 1);
   assert.equal(saved.completed['Saved::Deck'], oldLibrary.completed['Saved::Deck']);
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#backupInput').setInputFiles({ name: download.suggestedFilename(), mimeType: 'application/json', buffer: Buffer.concat(chunks) });
+  await page.waitForFunction(() => !document.querySelector('#settingsDialog').open);
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'midnight-aurora');
+  assert.equal(await page.locator('.answer-input').first().isVisible(), false);
+  assert.equal(await page.locator('#recordCount').textContent(), '1');
 });
