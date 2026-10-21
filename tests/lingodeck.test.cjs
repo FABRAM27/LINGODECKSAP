@@ -21,8 +21,8 @@ after(async () => {
   if (server) await new Promise(resolve => server.close(resolve));
 });
 
-async function setup(t, mockSpeech = false) {
-  const context = await browser.newContext();
+async function setup(t, mockSpeech = false, options = {}) {
+  const context = await browser.newContext(options);
   t.after(() => context.close());
   if (mockSpeech) await context.addInitScript(() => {
     const voices = [
@@ -32,11 +32,15 @@ async function setup(t, mockSpeech = false) {
       { name: 'Microsoft Ava Online Natural', lang: 'en-US', localService: false }
     ];
     window.speechLog = [];
+    window.speechInstances = [];
+    window.speechCancelCount = 0;
     window.SpeechSynthesisUtterance = function (text) { this.text = text; };
-    Object.defineProperty(window, 'speechSynthesis', { value: {
-      getVoices: () => voices, cancel() {}, addEventListener() {},
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
+      getVoices: () => window.noVoices ? [] : voices, cancel() { window.speechCancelCount += 1; }, addEventListener() {},
       speak(utterance) {
         window.speechLog.push({ text: utterance.text, voice: utterance.voice?.name, lang: utterance.lang, rate: utterance.rate });
+        window.speechInstances.push(utterance);
+        if (window.holdSpeech) return;
         setTimeout(() => {
           if (window.failRemote && utterance.voice?.localService === false) utterance.onerror?.({ error: 'network' });
           else { utterance.onstart?.(); utterance.onend?.(); }
@@ -109,7 +113,7 @@ test('column visibility complements Fields and Repeat group preserves configurat
   await page.locator('#fieldsButton').click();
   await page.locator('[data-field-toggle="2"]').uncheck();
   await page.locator('#applyFieldsButton').click();
-  assert.equal(await page.locator('[data-column-toggle]').count(), 2);
+  assert.equal(await page.locator('[data-column-toggle]:not([data-column-toggle="answer"])').count(), 2);
   assert.equal(await page.locator('.answer-input').first().inputValue(), 'the cause');
   assert.equal(await page.locator('#repeatButton').isVisible(), false);
   await page.locator('#settingsButton').click();
@@ -120,7 +124,7 @@ test('column visibility complements Fields and Repeat group preserves configurat
   assert.deepEqual(await page.locator('#practiceTableBody .number-col').allTextContents(), before);
   assert.equal(await page.locator('.answer-input').first().inputValue(), '');
   assert.equal(await page.locator('.reference-content').count(), 5);
-  assert.equal(await page.locator('[data-column-toggle]').count(), 2);
+  assert.equal(await page.locator('[data-column-toggle]:not([data-column-toggle="answer"])').count(), 2);
 });
 
 test('shortcuts leave browser modifiers, text inputs, IME, dialogs, and normal controls alone', async t => {
@@ -359,4 +363,245 @@ test('browser-agent callbacks still import, retrieve parent decks and validate r
   assert.equal(result.retrieved.rows, 6);
   assert.deepEqual(result.range, { start: 6, end: 6, rows: 1 });
   assert.equal(result.rejected, true);
+});
+
+test('practice headers expose aligned, accessible icon controls even when their content is hidden', async t => {
+  const { page } = await setup(t);
+  await importData(page); await practice(page);
+  const toggle = page.locator('[data-column-toggle="0"]');
+  assert.equal(await toggle.textContent(), '');
+  assert.match(await toggle.getAttribute('title'), /Show .* column/);
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(await toggle.locator('svg').count(), 1);
+  await toggle.focus(); await toggle.press('Enter');
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+  assert.match(await toggle.getAttribute('aria-label'), /Hide .* column/);
+  assert.equal(await page.locator('.reference-content').count(), 5);
+  await toggle.press('Space');
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  assert.equal(await toggle.isVisible(), true);
+  assert.equal(await page.locator('[data-speak-column="0"]').isVisible(), true);
+  assert.equal(await page.locator('.reference-content').count(), 0);
+  const centers = await page.locator('.practice-header-actions').evaluateAll(groups => groups.map(group => { const rect = group.getBoundingClientRect(); return rect.top + rect.height / 2; }));
+  assert.ok(Math.max(...centers) - Math.min(...centers) < 1, 'Header controls align on a shared horizontal axis');
+});
+
+test('collapsing answers preserves input nodes, values, validation results, and saved column preferences', async t => {
+  const { page } = await setup(t);
+  await importData(page); await practice(page);
+  const input = page.locator('.answer-input').first();
+  await input.fill('the cause'); await input.press('Enter');
+  await input.evaluate(element => { window.originalAnswer = element; });
+  const expandedWidth = await page.locator('th.answer-col').evaluate(element => element.getBoundingClientRect().width);
+  const toggle = page.locator('[data-column-toggle="answer"]');
+  await toggle.click();
+  assert.equal(await input.isVisible(), false);
+  assert.equal(await input.isDisabled(), false);
+  assert.equal(await input.inputValue(), 'the cause');
+  assert.equal(await page.locator('.answer-wrap.is-correct').count(), 1);
+  assert.equal(await input.evaluate(element => window.originalAnswer === element), true);
+  assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+  const collapsedWidth = await page.locator('th.answer-col').evaluate(element => element.getBoundingClientRect().width);
+  assert.ok(collapsedWidth < expandedWidth, 'The hidden answer column occupies less space');
+  assert.equal(await toggle.isVisible(), true);
+  await toggle.click();
+  assert.equal(await input.isVisible(), true);
+  assert.equal(await input.inputValue(), 'the cause');
+  assert.equal(await input.evaluate(element => window.originalAnswer === element), true);
+  await toggle.click();
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.deckSettings[saved.session.deck].answerCollapsed;
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.locator('[data-column-toggle="answer"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('.answer-input').first().isVisible(), false);
+});
+
+test('column audio follows current-group order, skips empty cells, and uses its language and universal speed', async t => {
+  const { page } = await setup(t, true);
+  await importData(page, 'Basic|Audio::Deck|bird↑Vogel↑↓Basic|Audio::Deck|dog↑↑↓Basic|Audio::Deck|house↑Haus↑');
+  await practice(page);
+  await page.locator('#settingsButton').click();
+  await page.locator('#speechRate').selectOption('0.75');
+  await page.locator('#closeSettingsButton').click();
+  await page.locator('[data-speak-column="1"]').click();
+  await page.waitForFunction(() => speechLog.length === 2 && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false');
+  assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.text)), ['Vogel', 'Haus']);
+  assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.lang)), ['de-DE', 'de-DE']);
+  assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.voice)), ['Microsoft Katja Online Natural', 'Microsoft Katja Online Natural']);
+  assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.rate)), [0.75, 0.75]);
+  assert.equal(await page.locator('.is-audio-active').count(), 0);
+  await page.locator('[data-speak-column="2"]').click();
+  assert.equal(await page.evaluate(() => speechLog.length), 2);
+  assert.match((await page.locator('.toast').allTextContents()).join(' '), /no text to read/);
+});
+
+test('column playback can be stopped or replaced without stale completions advancing another queue', async t => {
+  const { page } = await setup(t, true);
+  await importData(page); await practice(page);
+  await page.evaluate(() => { window.holdSpeech = true; });
+  const english = page.locator('[data-speak-column="0"]');
+  const german = page.locator('[data-speak-column="1"]');
+  await english.click();
+  await page.waitForFunction(() => speechLog.length === 1);
+  assert.equal(await english.getAttribute('aria-pressed'), 'true');
+  assert.equal(await english.locator('rect').count(), 1);
+  assert.equal(await page.locator('.is-audio-active').count(), 6);
+  await page.locator('[data-column-toggle="answer"]').click();
+  assert.equal(await english.getAttribute('aria-pressed'), 'true', 'Answer visibility does not interrupt audio');
+  await page.evaluate(() => { speechInstances[0].onstart(); speechInstances[0].onend(); });
+  assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.text)), ['the cause', 'the choice']);
+  await english.click();
+  assert.equal(await english.getAttribute('aria-pressed'), 'false');
+  await page.evaluate(() => speechInstances[1].onend());
+  assert.equal(await page.evaluate(() => speechLog.length), 2);
+  await english.click(); await page.waitForFunction(() => speechLog.length === 3);
+  await german.click(); await page.waitForFunction(() => speechLog.length === 4);
+  assert.equal(await english.getAttribute('aria-pressed'), 'false');
+  assert.equal(await german.getAttribute('aria-pressed'), 'true');
+  await page.evaluate(() => speechInstances[2].onend());
+  assert.equal(await page.evaluate(() => speechLog.length), 4);
+  await page.locator('#nextButton').click();
+  await page.evaluate(() => speechInstances[3].onend());
+  assert.equal(await page.evaluate(() => speechLog.length), 4);
+  assert.equal(await page.locator('.is-audio-active').count(), 0);
+  await page.locator('[data-speak-column="0"]').evaluate(button => { button.click(); button.click(); });
+  assert.equal(await page.locator('[data-speak-column="0"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.evaluate(() => speechLog.length), 4);
+  await page.locator('[data-speak-column="0"]').click();
+  await page.waitForFunction(() => speechLog.length === 5);
+  await page.locator('#sourceTab').click();
+  await page.evaluate(() => speechInstances[4].onend());
+  assert.equal(await page.evaluate(() => speechLog.length), 5);
+  assert.equal(await page.locator('.is-audio-active').count(), 0);
+  await page.locator('#practiceTab').click();
+  await page.locator('[data-speak-column="0"]').click();
+  await page.waitForFunction(() => speechLog.length === 6);
+  await page.evaluate(() => speechInstances[5].onerror({ error: 'interrupted' }));
+  assert.equal(await page.locator('[data-speak-column="0"]').getAttribute('aria-pressed'), 'false');
+});
+
+test('a failed online voice retries once locally and continues the column without repeated remote failures', async t => {
+  const { page } = await setup(t, true);
+  await importData(page); await practice(page);
+  await page.evaluate(() => { window.failRemote = true; });
+  await page.locator('[data-speak-column="1"]').click();
+  await page.waitForFunction(() => speechLog.length === 6 && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false');
+  assert.deepEqual(await page.evaluate(() => speechLog.slice(1).map(item => item.text)), ['die Ursache', 'die Wahl', 'die Erfahrung', 'die Freiheit', 'die Gewohnheit']);
+  assert.equal(await page.evaluate(() => speechLog.filter(item => item.voice === 'Microsoft Katja Online Natural').length), 1);
+  assert.equal(await page.evaluate(() => speechLog.slice(1).every(item => item.voice === 'German local')), true);
+});
+
+test('missing voices use the language default and unsupported speech returns idle controls', async t => {
+  const { page } = await setup(t, true);
+  await importData(page, 'Basic|Audio::Deck|bird↑Vogel'); await practice(page);
+  await page.evaluate(() => { window.noVoices = true; });
+  await page.locator('[data-speak-column="1"]').click();
+  await page.waitForFunction(() => speechLog.length === 1 && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false');
+  assert.equal(await page.evaluate(() => speechLog[0].lang), 'de-DE');
+  assert.equal(await page.evaluate(() => speechLog[0].voice), undefined);
+  await page.evaluate(() => Object.defineProperty(window, 'speechSynthesis', { value: undefined }));
+  await page.locator('[data-speak-column="1"]').click();
+  assert.equal(await page.locator('[data-speak-column="1"]').getAttribute('aria-pressed'), 'false');
+  assert.match((await page.locator('.toast').allTextContents()).join(' '), /not supported/);
+});
+
+test('appearance updates semantic tokens immediately, supports keyboard selection, and survives reload', async t => {
+  const { page } = await setup(t);
+  await importData(page); await practice(page);
+  await page.locator('#completeDeckButton').click();
+  await page.locator('#settingsButton').click();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'default');
+  for (const id of ['ocean', 'forest', 'lavender', 'warm-neutral', 'default']) {
+    await page.locator(`[data-theme-choice="${id}"]`).click();
+    assert.equal(await page.locator('html').getAttribute('data-theme'), id);
+    assert.equal(await page.locator(`[data-theme-choice="${id}"]`).getAttribute('aria-checked'), 'true');
+    assert.equal(await page.locator('#themeOptions [aria-checked="true"]').count(), 1);
+    assert.equal(await page.locator('#recordCount').textContent(), '18');
+    const ratios = await page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement);
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext('2d');
+      function rgb(token) { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = style.getPropertyValue(token); ctx.fillRect(0, 0, 1, 1); return Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3); }
+      function lum(color) { return color.map(v => { v /= 255; return v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0); }
+      function contrast(a, b) { const [light, dark] = [lum(rgb(a)), lum(rgb(b))].sort((a, b) => b - a); return (light + .05) / (dark + .05); }
+      return {
+        text: contrast('--ink', '--paper'), secondary: contrast('--ink-2', '--paper'), muted: contrast('--ink-3', '--surface-soft'),
+        primary: contrast('--on-accent', '--blue'), selected: contrast('--blue-dark', '--blue-soft'),
+        success: contrast('--success', '--success-soft'), danger: contrast('--danger', '--danger-soft'), warning: contrast('--warning', '--warning-soft')
+      };
+    });
+    for (const [name, ratio] of Object.entries(ratios)) assert.ok(ratio >= 4.5, `${id} ${name} contrast ${ratio.toFixed(2)} must reach 4.5:1`);
+  }
+  await page.locator('[data-theme-choice="default"]').press('ArrowRight');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'ocean');
+  await page.locator('[data-theme-choice="ocean"]').press('ArrowRight');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'forest');
+  await page.locator('#closeSettingsButton').click();
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.preferences.theme === 'forest';
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'forest');
+  assert.equal(await page.locator('#completeDeckButton').textContent(), 'Reviewed today');
+  assert.equal(await page.locator('#recordCount').textContent(), '18');
+});
+
+test('themes, collapsed headers, and icon touch targets remain usable on narrow screens', async t => {
+  const { page } = await setup(t, false, { hasTouch: true });
+  await importData(page); await practice(page);
+  await page.locator('[data-column-toggle="answer"]').click();
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    for (const selector of ['[data-column-toggle="answer"]', '[data-column-toggle="0"]', '[data-speak-column="0"]']) {
+      await page.locator(selector).scrollIntoViewIfNeeded();
+      const box = await page.locator(selector).boundingBox();
+      assert.ok(box.width >= 44 && box.height >= 44, `Touch target ${selector} is at least 44px`);
+    }
+    await page.locator('#settingsButton').click();
+    await page.locator('[data-theme-choice="lavender"]').click();
+    assert.equal(await page.evaluate(() => document.querySelector('#settingsDialog').scrollWidth <= document.querySelector('#settingsDialog').clientWidth), true);
+    await page.locator('#closeSettingsButton').click();
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await page.locator('.header-icon').first().evaluate(element => getComputedStyle(element).transitionDuration.split(',').every(duration => parseFloat(duration) <= .001)), true);
+});
+
+test('older library backups preserve their content and settings while new appearance preferences round-trip', async t => {
+  const { page } = await setup(t);
+  const oldLibrary = {
+    version: 1, records: [{ id: 'old-1', noteType: 'Basic', deck: 'Saved::Deck', fields: ['bird', 'Vogel'] }],
+    deckSettings: { 'Saved::Deck': { fields: [{ name: 'English', language: 'en-US', enabled: true, visible: true }, { name: 'German', language: 'de-DE', enabled: true, visible: false }], answerField: 1, chunk: 0 } },
+    completed: { 'Saved::Deck': '2026-10-01T12:00:00.000Z' }, preferences: { rate: .75, repeatPasses: true, shortcuts: true, keyLanguage: 'de-DE' },
+    session: { deck: 'Saved::Deck', chunk: 0, view: 'practice' }
+  };
+  await page.locator('#settingsButton').click();
+  await page.locator('#backupInput').setInputFiles({ name: 'old-library.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(oldLibrary)) });
+  await page.waitForFunction(() => !document.querySelector('#settingsDialog').open);
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'default');
+  assert.equal(await page.locator('#recordCount').textContent(), '1');
+  assert.equal(await page.locator('[data-column-toggle="answer"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('[data-column-toggle="0"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('[data-column-toggle="1"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('#completeDeckButton').textContent(), 'Reviewed today');
+  await page.locator('[data-column-toggle="answer"]').click();
+  await page.locator('#settingsButton').click();
+  assert.equal(await page.locator('#speechRate').inputValue(), '0.75');
+  await page.locator('[data-theme-choice="warm-neutral"]').click();
+  const downloading = page.waitForEvent('download');
+  await page.locator('#backupButton').click();
+  const stream = await (await downloading).createReadStream();
+  const chunks = []; for await (const chunk of stream) chunks.push(chunk);
+  const saved = JSON.parse(Buffer.concat(chunks));
+  assert.equal(saved.version, 1);
+  assert.deepEqual(saved.records[0].fields, ['bird', 'Vogel']);
+  assert.equal(saved.preferences.theme, 'warm-neutral');
+  assert.equal(saved.deckSettings['Saved::Deck'].answerCollapsed, true);
+  assert.equal(saved.deckSettings['Saved::Deck'].answerField, 1);
+  assert.equal(saved.completed['Saved::Deck'], oldLibrary.completed['Saved::Deck']);
 });

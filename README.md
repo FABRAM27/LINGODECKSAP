@@ -29,9 +29,14 @@ same address and browser profile to access the same saved library.
   updating it; other decks and completion markers are retained.
 - Choose a deck or parent deck and click **Retrieve data**. Record order is kept.
 - **Fields** selects the languages included in Practice. Each included column
-  has its own **Show column / Hide column** control. These controls do not change
-  field inclusion or erase typed answers. A column control clears temporary
+  has an **eye / eye-off** button in its header, with a tooltip describing the
+  action. These controls do not change field inclusion or erase typed answers.
+  A column control clears temporary
   row/global reveal overrides so its visibility applies consistently to the group.
+- The **Your answer** header has the same visibility control. Collapsing it only
+  hides the input presentation; values, validation results, and field selection
+  stay intact. The header remains available to expand it again. This preference
+  is saved per deck and kept when changing groups or using Repeat group.
 - Typing is optional. Enter checks a typed answer and advances to the next
   editable row. Settings can restrict checking to one included field; the default
   continues to accept any included field.
@@ -50,6 +55,15 @@ same address and browser profile to access the same saved library.
 
 ## Audio and Useful Keys
 
+The play icon in each language column's header reads that column's **current
+practice group** from top to bottom, even when its text is hidden. Empty cells
+are skipped. The control changes to Stop while playing and highlights the active
+column; click again to stop. Starting another pronunciation or column cancels
+the previous one. Group/deck navigation, leaving Practice, changing reference
+visibility, and opening settings stop playback. Collapsing the Answer column
+does not interrupt audio. A remote-voice failure retries locally and uses that
+fallback for the rest of the current sequence.
+
 One Settings panel controls universal playback speed and voice previews. The
 existing locale matching, natural/enhanced voice ranking, and remote-to-local
 retry behavior are preserved. Available voices are listed in automatic selection
@@ -61,6 +75,18 @@ cannot be supplied when the browser does not expose one.
 extra letter to insert it at the last active answer's cursor or replace its
 selection. Uppercase variants are available. Korean and Japanese are disabled;
 use their system input methods. The panel never changes system keyboard settings.
+
+## Appearance
+
+Settings → **Appearance** offers Default, Ocean, Forest, Lavender, and Warm
+Neutral. Swatches preview each palette; a checkmark identifies the active choice.
+Changes apply immediately throughout the app and are saved with your library.
+Default preserves the original blue-and-midnight identity. Existing libraries
+and older backups default to this palette and expanded answer inputs.
+
+The palette group supports Tab, arrow keys, Home/End, and Enter/Space. Themes use
+centralized semantic color tokens, visible focus indicators, and text/checkmark
+feedback alongside color. Reduced-motion preferences disable decorative motion.
 
 ## Keyboard shortcuts
 
@@ -87,8 +113,8 @@ continue navigating; clicking navigation buttons still focuses the first answer.
 ## Saved data and backups
 
 IndexedDB stores decks, hierarchy, per-deck field settings and visibility, the
-last deck/group/view, playback preferences, and completion dates. Typed attempts
-are temporary; this is not a score history or a scheduling system.
+last deck/group/view, appearance and playback preferences, and completion dates.
+Typed attempts are temporary; this is not a score history or a scheduling system.
 
 Use Settings → **Back up library** to download a JSON backup. **Restore backup**
 validates that file and asks before replacing a nonempty library. **Delete selected
