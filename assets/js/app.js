@@ -90,6 +90,8 @@
   ['practiceTable', 'settingsButton', 'settingsDialog', 'closeSettingsButton', 'themeOptions', 'speechRate', 'previewLanguage', 'previewVoiceButton', 'voiceDescription', 'voiceList', 'repeatPasses', 'enableShortcuts', 'answerField', 'backupButton', 'backupInput', 'restoreBackupLabel', 'libraryControls', 'libraryFilter', 'deleteDeckButton', 'storageNotice', 'repeatButton', 'keysButton', 'usefulKeys', 'keyLanguage', 'uppercaseKeys', 'keyButtons', 'keyHint', 'activeDeckName', 'groupPosition', 'reviewDate', 'completeDeckButton', 'undoCompletionButton', 'importDialog', 'importMessage', 'cancelImportButton', 'confirmImportButton'].forEach(function (name) {
     els[name] = document.getElementById(name);
   });
+  els.practiceGroupSize = document.getElementById('practiceGroupSize');
+  els.practiceGroupSizeError = document.getElementById('practiceGroupSizeError');
 
   var libraryStore = Bellasprak.library.createStore(storageWarning);
   var speech = Bellasprak.speech.create({
@@ -179,6 +181,8 @@
     state.restoring = true;
     cancelSpeech();
     applyTheme();
+    state.chunkSize = library.preferences.practiceGroupSize;
+    resetPracticeGroupSizeInput();
     state.fields = [];
     resetLoadedData();
     state.pendingDeck = library.session.deck || (library.records[0] && library.records[0].deck) || '';
@@ -787,6 +791,7 @@
     cancelSpeech();
     renderThemeOptions();
     els.speechRate.value = String(library.preferences.rate);
+    resetPracticeGroupSizeInput();
     els.repeatPasses.checked = library.preferences.repeatPasses;
     els.enableShortcuts.checked = library.preferences.shortcuts;
     els.answerField.innerHTML = '<option value="-1">Any included field</option>' + getSelectedFieldIndexes().map(function (index) { return '<option value="' + index + '">' + escapeHtml(state.fields[index].name) + '</option>'; }).join('');
@@ -795,6 +800,52 @@
     els.settingsDialog.showModal();
     els.settingsDialog.scrollTop = 0;
     renderVoiceOptions();
+  }
+
+  function resetPracticeGroupSizeInput() {
+    els.practiceGroupSize.value = String(library.preferences.practiceGroupSize);
+    els.practiceGroupSize.setAttribute('aria-invalid', 'false');
+    els.practiceGroupSizeError.textContent = '';
+    els.practiceGroupSizeError.hidden = true;
+  }
+
+  function validatePracticeGroupSizeInput() {
+    var raw = els.practiceGroupSize.value;
+    var size = Number(raw);
+    var valid = /^\d+$/.test(raw) && Bellasprak.library.isValidPracticeGroupSize(size);
+    els.practiceGroupSize.setAttribute('aria-invalid', String(!valid));
+    els.practiceGroupSizeError.hidden = valid;
+    els.practiceGroupSizeError.textContent = valid ? '' : (size > Number.MAX_SAFE_INTEGER
+      ? 'That number is too large. Use a whole number no greater than 9,007,199,254,740,991.'
+      : 'Enter a positive whole number, such as 4 or 6.') + ' The current setting is still ' + library.preferences.practiceGroupSize + '.';
+    return valid ? size : null;
+  }
+
+  function applyPracticeGroupSize() {
+    var size = validatePracticeGroupSizeInput();
+    if (size === null) return;
+    els.practiceGroupSize.value = String(size);
+    if (size === state.chunkSize) return;
+
+    var oldSize = state.chunkSize;
+    var firstEntry = state.chunkIndex * oldSize;
+    saveCurrentDeck();
+    // Saved chunks refer to the previous global size, including decks not open now.
+    Object.keys(library.deckSettings).forEach(function (deck) {
+      var settings = library.deckSettings[deck];
+      settings.chunk = Math.floor(settings.chunk * oldSize / size);
+    });
+    library.preferences.practiceGroupSize = size;
+    state.chunkSize = size;
+    state.chunkIndex = state.activeRows.length ? Math.min(Math.floor(firstEntry / size), getChunkCount() - 1) : 0;
+    populateRanges();
+    renderPractice();
+    if (state.lastSpeech) {
+      var lastRow = getCurrentChunk().findIndex(function (record) { return record.id === state.lastSpeech.id; });
+      if (lastRow < 0) state.lastSpeech = null;
+      else state.lastSpeech.row = lastRow;
+    }
+    persistLibrary();
   }
 
   function exportLibrary() {
@@ -1168,6 +1219,13 @@
     playSpeech(previews[els.previewLanguage.value], els.previewLanguage.value, els.previewVoiceButton);
   });
   els.speechRate.addEventListener('change', function () { library.preferences.rate = Number(els.speechRate.value); persistLibrary(); });
+  els.practiceGroupSize.addEventListener('input', validatePracticeGroupSizeInput);
+  els.practiceGroupSize.addEventListener('change', applyPracticeGroupSize);
+  els.practiceGroupSize.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229 || event.repeat || event.defaultPrevented || hasShortcutModifier(event) || event.shiftKey) return;
+    event.preventDefault();
+    applyPracticeGroupSize();
+  });
   els.repeatPasses.addEventListener('change', function () { library.preferences.repeatPasses = els.repeatPasses.checked; updatePracticeControls(); persistLibrary(); });
   els.enableShortcuts.addEventListener('change', function () { library.preferences.shortcuts = els.enableShortcuts.checked; persistLibrary(); });
   els.answerField.addEventListener('change', function () { state.answerField = Number(els.answerField.value); state.practice.forEach(function (practice) { practice.result = ''; }); renderPractice(); persistLibrary(); });
@@ -1280,7 +1338,7 @@
       {
         name: 'open_practice_range',
         title: 'Open a practice range',
-        description: 'Open Practice at the five-card range containing the requested one-based row number.',
+        description: 'Open Practice at the range containing the requested one-based row number, using the configured practice group size.',
         inputSchema: {
           type: 'object',
           properties: {

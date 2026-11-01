@@ -63,6 +63,18 @@ before changing module boundaries or storage behavior.
 - Imports add to the browser's library. Importing an existing deck asks before
   updating it; other decks and completion markers are retained.
 - Choose a deck or parent deck and click **Retrieve data**. Record order is kept.
+- Settings → **Entries per practice group** accepts a directly typed positive
+  whole number. Press Enter or leave the field to apply. The default is **5**,
+  including older saved libraries and backups without this preference. Empty,
+  zero, negative, decimal, or unrepresentable values show inline feedback and do
+  not replace the previous valid setting.
+  The setting applies across decks, ranges, navigation, group progress, and column
+  audio. A smaller final group shows only the remaining entries; a size larger
+  than the deck shows all its entries. Changing size opens the new group containing
+  the previous group's first entry without reordering vocabulary. Saved positions
+  in other decks are recalculated too. The size is retained across visits and in
+  library backups; overlapping rows keep their current temporary attempts and
+  reveal state when regrouped.
 - **Fields** selects the languages included in Practice. Each included column
   has an **eye / eye-off** button in its header, with a tooltip describing the
   action. These controls do not change field inclusion or erase typed answers.

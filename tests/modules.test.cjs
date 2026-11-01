@@ -72,6 +72,7 @@ test('library defaults and validation preserve the version-1 backup contract', (
   assert.equal(clean.preferences.theme, 'midnight-aurora');
   assert.equal(clean.preferences.shortcuts, true);
   assert.equal(clean.preferences.rate, 0.75);
+  assert.equal(clean.preferences.practiceGroupSize, 5, 'Older backups default to five entries');
   assert.equal(clean.completed['Parent::Child'], '2026-10-01T12:00:00.000Z');
   assert.deepEqual(plain(clean.session), { deck: 'Parent::Child', chunk: 2, view: 'practice' });
   const old = library.validate({ version: 1, records: [], preferences: { theme: 'unknown', rate: 99 } });
@@ -79,6 +80,19 @@ test('library defaults and validation preserve the version-1 backup contract', (
   assert.equal(old.preferences.rate, 1);
   assert.throws(() => library.validate({ version: 2, records: [] }), /not a supported Bellasprak/);
   assert.throws(() => library.validate({ version: 1, records: [{ deck: 'Broken', fields: null }] }), /invalid record/);
+});
+
+test('practice group size defaults to five and accepts only positive safe whole numbers in saved preferences', () => {
+  const { library } = loadModules();
+  assert.equal(library.createEmpty().preferences.practiceGroupSize, 5);
+  for (const size of [1, 4, 5, 6, 8, 100, Number.MAX_SAFE_INTEGER]) {
+    assert.equal(library.isValidPracticeGroupSize(size), true);
+    assert.equal(library.validate({ version: 1, records: [], preferences: { practiceGroupSize: size } }).preferences.practiceGroupSize, size);
+  }
+  for (const size of [undefined, null, '', '6', 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(library.isValidPracticeGroupSize(size), false);
+    assert.equal(library.validate({ version: 1, records: [], preferences: { practiceGroupSize: size } }).preferences.practiceGroupSize, 5);
+  }
 });
 
 test('voice selection still prefers natural voices within the exact locale and keeps the local fallback', () => {

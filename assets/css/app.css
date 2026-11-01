@@ -1570,6 +1570,9 @@ label.settings-row { flex-wrap: nowrap; align-items: flex-start; }
 label.settings-row input { margin-top: .3em; flex: 0 0 auto; }
 .settings-row > label:first-child { flex: 1; }
 .settings-note, #voiceDescription, #keyHint { font-size: .8rem; color: var(--ink-2); }
+.settings-body input[type="number"] { width: 6rem; max-width: 100%; min-height: 44px; padding: 7px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-strong); color: var(--ink); }
+.settings-body input[aria-invalid="true"] { border-color: var(--danger); }
+.settings-error { color: var(--danger); }
 #voiceList { max-height: 140px; overflow: auto; padding-left: 20px; font-size: .8rem; }
 .shortcut-list { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; font-size: .82rem; }
 .shortcut-list dt, .shortcut-list dd { margin: 0; }

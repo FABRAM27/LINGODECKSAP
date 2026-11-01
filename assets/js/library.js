@@ -6,7 +6,11 @@
   var usefulLetters = Bellasprak.config.usefulLetters;
 
   function createEmptyLibrary() {
-    return { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE', theme: 'default' }, session: {} };
+    return { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE', theme: 'default', practiceGroupSize: 5 }, session: {} };
+  }
+
+  function isValidPracticeGroupSize(value) {
+    return Number.isSafeInteger(value) && value > 0;
   }
 
   function validateLibrary(value) {
@@ -31,7 +35,8 @@
       rate: [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5].indexOf(Number(preferences.rate)) >= 0 ? Number(preferences.rate) : 1,
       repeatPasses: preferences.repeatPasses === true, shortcuts: preferences.shortcuts !== false,
       keys: preferences.keys === true, keyLanguage: Object.hasOwn(usefulLetters, preferences.keyLanguage) ? preferences.keyLanguage : 'de-DE',
-      theme: themes.some(function (theme) { return theme.id === preferences.theme; }) ? preferences.theme : 'default'
+      theme: themes.some(function (theme) { return theme.id === preferences.theme; }) ? preferences.theme : 'default',
+      practiceGroupSize: isValidPracticeGroupSize(preferences.practiceGroupSize) ? preferences.practiceGroupSize : 5
     };
     var session = value.session || {};
     clean.session = { deck: typeof session.deck === 'string' ? session.deck : '', chunk: Number.isInteger(session.chunk) && session.chunk >= 0 ? session.chunk : 0, view: session.view === 'practice' ? 'practice' : 'source' };
@@ -103,5 +108,5 @@
     return { open: open, save: save, close: close, pending: function () { return saveQueue; } };
   }
 
-  Bellasprak.library = { createEmpty: createEmptyLibrary, validate: validateLibrary, createStore: createStore };
+  Bellasprak.library = { createEmpty: createEmptyLibrary, validate: validateLibrary, isValidPracticeGroupSize: isValidPracticeGroupSize, createStore: createStore };
 }(window.Bellasprak = window.Bellasprak || {}));

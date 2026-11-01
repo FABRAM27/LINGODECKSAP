@@ -75,6 +75,193 @@ async function outsideKeys(page, key, modifiers = {}) {
   }, { key, modifiers });
 }
 
+async function setPracticeGroupSize(page, size, commitKey = 'Enter') {
+  await page.locator('#settingsButton').click();
+  const input = page.getByLabel('Entries per practice group', { exact: true });
+  await input.fill(String(size));
+  await input.press(commitKey);
+  assert.equal(await input.getAttribute('aria-invalid'), 'false');
+  await page.locator('#closeSettingsButton').click();
+}
+
+for (const size of [1, 4, 5, 6, 20]) {
+  test(`practice group size ${size} keeps row order, ranges, navigation, progress, and column audio consistent`, async t => {
+    const { page } = await setup(t, true, { reducedMotion: 'reduce' });
+    await importData(page); await practice(page);
+    const english = await page.locator('#sourceTableBody td:nth-child(2)').allTextContents();
+    const german = await page.locator('#sourceTableBody td:nth-child(3)').allTextContents();
+    await setPracticeGroupSize(page, size);
+    await page.locator('[data-column-toggle="0"]').click();
+    const count = Math.ceil(13 / size);
+    const ranges = Array.from({ length: count }, (_, i) => `${i * size + 1}-${Math.min((i + 1) * size, 13)}`);
+    assert.deepEqual(await page.locator('#rangeSelect option').allTextContents(), ranges);
+    for (let group = 0; group < count; group++) {
+      const start = group * size, end = Math.min(start + size, 13);
+      assert.deepEqual(await page.locator('.item-number').allTextContents(), Array.from({ length: end - start }, (_, i) => String(start + i + 1)));
+      assert.deepEqual(await page.locator('#practiceTableBody [data-practice-field="0"] .reference-text').allTextContents(), english.slice(start, end));
+      assert.equal(await page.locator('#rangeSelect').inputValue(), String(group));
+      assert.equal(await page.locator('#groupPosition').textContent(), `Group ${group + 1} of ${count} · Words ${start + 1}–${end} of 13`);
+      assert.equal(await page.locator('#previousButton').isDisabled(), group === 0);
+      assert.equal(await page.locator('#nextButton').isDisabled(), group === count - 1);
+      const progress = await page.locator('#practiceProgressBar').evaluate(element => parseFloat(element.style.width));
+      assert.ok(Math.abs(progress - (group + 1) / count * 100) < 0.001);
+      if (group === 0 || group === count - 1) {
+        await page.evaluate(() => { speechLog.length = 0; });
+        await page.locator('[data-speak-column="1"]').click();
+        await page.waitForFunction(length => speechLog.length === length && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false', end - start);
+        assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.text)), german.slice(start, end));
+        assert.equal(await page.evaluate(() => speechLog.every(item => item.lang === 'de-DE' && item.voice === 'Microsoft Katja Online Natural')), true);
+      }
+      if (group < count - 1) await page.locator('#nextButton').click();
+    }
+    if (count > 1) {
+      await page.locator('#previousButton').click();
+      assert.equal(await page.locator('.item-number').first().textContent(), String((count - 2) * size + 1));
+      await page.locator('#rangeSelect').selectOption('0');
+      assert.equal(await page.locator('.item-number').first().textContent(), '1');
+      await page.locator('#rangeSelect').selectOption(String(count - 1));
+      assert.equal(await page.locator('.item-number').first().textContent(), String((count - 1) * size + 1));
+    }
+  });
+}
+
+test('changing practice group size anchors the previous first entry and preserves fields, visibility, attempts, pronunciation replay, and completion', async t => {
+  const { page } = await setup(t, true, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page);
+  await page.locator('#fieldsButton').click();
+  await page.locator('[data-field-toggle="2"]').uncheck();
+  await page.locator('#applyFieldsButton').click();
+  await page.locator('[data-column-toggle="0"]').click();
+  await page.locator('#rangeSelect').selectOption('2');
+  await page.locator('[data-speak-row="0"][data-speak-field="0"]').click();
+  await page.waitForFunction(() => speechLog.length === 1 && document.querySelector('[data-speak-row="0"][data-speak-field="0"]').getAttribute('aria-pressed') === 'false');
+  await page.locator('.answer-input').first().fill('the value');
+  await page.locator('.answer-input').first().press('Enter');
+  await page.locator('[data-reveal-row="1"]').click();
+  await page.locator('[data-column-toggle="answer"]').click();
+  await page.locator('#completeDeckButton').click();
+  await setPracticeGroupSize(page, 4);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['9', '10', '11', '12']);
+  assert.equal(await page.locator('[data-column-toggle]:not([data-column-toggle="answer"])').count(), 2);
+  assert.equal(await page.locator('[data-column-toggle="answer"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('[data-column-toggle="0"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('.answer-input').nth(2).inputValue(), 'the value');
+  assert.equal(await page.locator('.answer-wrap').nth(2).getAttribute('class'), 'answer-wrap is-correct');
+  assert.equal(await page.locator('.answer-input').nth(2).isVisible(), false);
+  assert.equal(await page.locator('[data-reveal-row="3"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#completeDeckButton').textContent(), 'Reviewed today');
+  assert.equal(await outsideKeys(page, 'r'), true);
+  await page.waitForFunction(() => speechLog.length === 2);
+  assert.equal(await page.evaluate(() => speechLog[1].text), 'the value', 'Replay follows the same record after its local row index changes');
+  await setPracticeGroupSize(page, 6);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['7', '8', '9', '10', '11', '12']);
+  await setPracticeGroupSize(page, 1);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['7']);
+  await setPracticeGroupSize(page, 5);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['6', '7', '8', '9', '10']);
+  assert.equal(await outsideKeys(page, 'n'), true);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['11', '12', '13']);
+  assert.equal(await outsideKeys(page, 'b'), true);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['6', '7', '8', '9', '10']);
+});
+
+test('invalid practice group sizes show inline feedback without replacing the previous valid value', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page);
+  await setPracticeGroupSize(page, 6);
+  await page.locator('#settingsButton').click();
+  const input = page.getByLabel('Entries per practice group', { exact: true });
+  for (const value of ['', '0', '-1', '1.5', '4.0', '2e2', '9007199254740992']) {
+    await input.fill(value); await input.press('Enter');
+    assert.equal(await input.getAttribute('aria-invalid'), 'true', `${value} is rejected`);
+    assert.equal(await page.locator('#practiceGroupSizeError').isVisible(), true);
+    assert.match(await page.locator('#practiceGroupSizeError').textContent(), /current setting is still 6/);
+    assert.equal(await page.locator('#practiceTableBody tr').count(), 6);
+    assert.equal(await page.locator('#rangeSelect option').first().textContent(), '1-6');
+  }
+  await input.fill('4');
+  for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { isComposing: true }, { repeat: true }, { keyCode: 229 }]) {
+    assert.equal(await input.evaluate((element, modifiers) => {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...modifiers });
+      element.dispatchEvent(event); return event.defaultPrevented;
+    }, modifiers), false);
+    assert.equal(await page.locator('#practiceTableBody tr').count(), 6);
+  }
+  await input.press('Tab');
+  assert.equal(await input.getAttribute('aria-invalid'), 'false');
+  assert.equal(await page.locator('#practiceGroupSizeError').isVisible(), false);
+  assert.equal(await page.locator('#practiceTableBody tr').count(), 4);
+  await page.locator('#closeSettingsButton').click();
+  await page.locator('#settingsButton').click();
+  assert.equal(await input.inputValue(), '4');
+});
+
+test('practice group size persists before import, across visits, and through backup restoration', async t => {
+  const { page, context } = await setup(t, false, { reducedMotion: 'reduce' });
+  await setPracticeGroupSize(page, 6, 'Tab');
+  await importData(page); await practice(page);
+  assert.equal(await page.locator('#practiceTableBody tr').count(), 6);
+  await page.locator('#rangeSelect').selectOption('2');
+  await page.locator('#completeDeckButton').click();
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.preferences.practiceGroupSize === 6 && saved.session.chunk === 2 && Boolean(saved.completed[saved.session.deck]);
+  });
+  await page.close();
+  const reopened = await context.newPage(); await reopened.goto(origin); await ready(reopened);
+  assert.deepEqual(await reopened.locator('.item-number').allTextContents(), ['13']);
+  assert.equal(await reopened.locator('#groupPosition').textContent(), 'Group 3 of 3 · Words 13–13 of 13');
+  await reopened.locator('#settingsButton').click();
+  assert.equal(await reopened.getByLabel('Entries per practice group', { exact: true }).inputValue(), '6');
+  const downloading = reopened.waitForEvent('download'); await reopened.locator('#backupButton').click();
+  const stream = await (await downloading).createReadStream();
+  const chunks = []; for await (const chunk of stream) chunks.push(chunk);
+  const backup = Buffer.concat(chunks);
+  assert.equal(JSON.parse(backup).preferences.practiceGroupSize, 6);
+  await reopened.locator('#closeSettingsButton').click();
+  await setPracticeGroupSize(reopened, 1);
+  await reopened.locator('#settingsButton').click();
+  reopened.once('dialog', dialog => dialog.accept());
+  await reopened.locator('#backupInput').setInputFiles({ name: 'group-size-backup.json', mimeType: 'application/json', buffer: backup });
+  await reopened.waitForFunction(() => !document.querySelector('#settingsDialog').open);
+  assert.deepEqual(await reopened.locator('.item-number').allTextContents(), ['13']);
+  assert.equal(await reopened.locator('#rangeSelect option').count(), 3);
+  assert.equal(await reopened.locator('#completeDeckButton').textContent(), 'Reviewed today');
+  await reopened.reload(); await ready(reopened);
+  assert.deepEqual(await reopened.locator('.item-number').allTextContents(), ['13']);
+  await reopened.locator('#settingsButton').click();
+  assert.equal(await reopened.getByLabel('Entries per practice group', { exact: true }).inputValue(), '6');
+});
+
+test('changing the global practice group size recalculates positions saved for other decks', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page);
+  await setPracticeGroupSize(page, 1);
+  async function openDeck(deck) {
+    await page.locator('#sourceTab').click(); await page.locator('#deckTrigger').click();
+    if (!(await page.locator(`[data-deck="${deck}"]`).isVisible())) {
+      await page.getByRole('button', { name: `Expand or collapse ${deck.split('::')[1]}`, exact: true }).click();
+    }
+    await page.locator(`[data-deck="${deck}"]`).click(); await practice(page);
+  }
+  await openDeck('Languages::French::Core Verbs');
+  await page.locator('#rangeSelect').selectOption('3');
+  await openDeck('Languages::German::Core Nouns');
+  await page.locator('#rangeSelect').selectOption('10');
+  await setPracticeGroupSize(page, 4);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['9', '10', '11', '12']);
+  await openDeck('Languages::French::Core Verbs');
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['1', '2', '3', '4']);
+  await page.locator('#nextButton').click();
+  await setPracticeGroupSize(page, 6);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['1', '2', '3', '4', '5']);
+  await openDeck('Languages::German::Core Nouns');
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['7', '8', '9', '10', '11', '12']);
+  await page.reload(); await ready(page);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['7', '8', '9', '10', '11', '12']);
+});
+
 test('native imports retain order, add to the library, and require confirmation to update', async t => {
   const { page } = await setup(t);
   await importData(page);
@@ -436,6 +623,10 @@ test('browser-agent callbacks still import, retrieve parent decks and validate r
   assert.equal(result.retrieved.rows, 6);
   assert.deepEqual(result.range, { start: 6, end: 6, rows: 1 });
   assert.equal(result.rejected, true);
+  await setPracticeGroupSize(page, 4);
+  const resizedRange = await page.evaluate(() => agentTools.open_practice_range.execute({ row: 6 }));
+  assert.deepEqual(resizedRange, { start: 5, end: 6, rows: 2 });
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['5', '6']);
 });
 
 test('practice headers expose aligned, accessible icon controls even when their content is hidden', async t => {
@@ -746,6 +937,13 @@ test('themes, collapsed headers, and icon touch targets remain usable on narrow 
       const optionFits = await page.locator(`[data-theme-choice="${id}"]`).evaluate(element => element.scrollWidth <= element.clientWidth);
       assert.equal(optionFits, true, `${id} preview and name fit at ${width}px`);
     }
+    const groupSizeInput = page.getByLabel('Entries per practice group', { exact: true });
+    await groupSizeInput.fill('0'); await groupSizeInput.press('Enter');
+    assert.equal(await page.locator('#practiceGroupSizeError').isVisible(), true);
+    assert.equal(await page.evaluate(() => document.querySelector('#settingsDialog').scrollWidth <= document.querySelector('#settingsDialog').clientWidth), true, `Validation feedback fits at ${width}px`);
+    const inputBox = await groupSizeInput.boundingBox();
+    assert.ok(inputBox.width >= 44 && inputBox.height >= 44, 'Group-size input has a comfortable touch target');
+    await groupSizeInput.fill('6'); await groupSizeInput.press('Enter');
     await page.locator('#closeSettingsButton').click();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     const rowLayout = await page.locator('.item-controls').first().evaluate(element => {
@@ -779,6 +977,7 @@ test('older library backups preserve their content and settings while new appear
   await page.locator('[data-column-toggle="answer"]').click();
   await page.locator('#settingsButton').click();
   assert.equal(await page.locator('#speechRate').inputValue(), '0.75');
+  assert.equal(await page.getByLabel('Entries per practice group', { exact: true }).inputValue(), '5', 'Older backups retain the default group size');
   await page.locator('[data-theme-choice="midnight-aurora"]').click();
   const downloading = page.waitForEvent('download');
   await page.locator('#backupButton').click();

@@ -64,6 +64,15 @@ row/column audio engines.
   operating-system, and connection property.
 - Groups remain ordered and user-controlled. Typed attempts are temporary;
   completion dates, last deck/group/view, settings, and imported content persist.
+- `preferences.practiceGroupSize` is a global positive safe integer, defaulting to
+  5 when missing or invalid. Settings accepts directly typed digits, committing
+  on Enter or change/blur; invalid drafts never update the preference. All ranges,
+  row slices, navigation, progress, and speech sequences use `state.chunkSize`.
+  Restore it from the validated preference before restoring deck/session chunks.
+  When resizing, convert each saved chunk with `floor(oldChunk * oldSize / newSize)`
+  and open the corresponding group for the current deck. Keep field inclusion,
+  visibility, completion, and record-keyed temporary attempts intact. This adds a
+  backwards-compatible preference, not a database-version migration.
 
 Browser storage is origin/profile scoped, not stored in `assets/` or beside HTML.
 Changing protocol, hostname, port, browser, profile, or computer does not migrate
