@@ -219,8 +219,9 @@ browser shortcuts, and native control activation remain available.
 | ? | Settings and shortcut help; also works in Source |
 
 Enter inside an answer field checks it. Browser modifiers and IME composition
-are ignored there too. Group shortcuts keep focus outside text entry so you can
-continue navigating; clicking navigation buttons still focuses the first answer.
+are ignored there too. Group shortcuts and navigation buttons focus the first
+visible, enabled answer input in the new group, ready for typing. If Answers is
+disabled, collapsed, or has no editable input, navigation leaves focus alone.
 
 ## Saved data and backups
 

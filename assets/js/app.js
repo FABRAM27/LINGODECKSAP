@@ -585,7 +585,9 @@
     if (!canGoNextGroup()) return;
     if (state.chunkIndex < getChunkCount() - 1) {
       changeChunk(state.chunkIndex + 1, focusAnswer);
-    } else if (state.reviewLoop === 'shuffle') {
+      return;
+    }
+    if (state.reviewLoop === 'shuffle') {
       startShuffledRound();
     } else {
       clearPracticeForNavigation();
@@ -594,6 +596,7 @@
       renderPractice();
       persistLibrary();
     }
+    if (focusAnswer !== false) focusFirstAnswerInput();
   }
 
   function applyFocusMode() {
@@ -767,9 +770,16 @@
     renderPractice();
     persistLibrary();
 
-    if (focusAnswer === false || !isAnswerColumnVisible()) return;
+    if (focusAnswer !== false) focusFirstAnswerInput();
+  }
+
+  function focusFirstAnswerInput() {
+    if (!isAnswerColumnVisible()) return;
     window.requestAnimationFrame(function () {
-      var firstInput = els.practiceTableBody.querySelector('.answer-input');
+      if (els.practiceView.hidden || !isAnswerColumnVisible()) return;
+      var firstInput = Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input:not(:disabled):not([readonly])')).find(function (input) {
+        return input.getClientRects().length > 0 && window.getComputedStyle(input).visibility === 'visible';
+      });
       if (firstInput) firstInput.focus();
     });
   }
@@ -993,8 +1003,8 @@
     if (els.practiceView.hidden || !state.activeRows.length) return;
     var key = event.key.toLocaleLowerCase();
     var action = null;
-    if ((key === '[' || key === 'b') && state.chunkIndex > 0) action = function () { changeChunk(state.chunkIndex - 1, false); };
-    if ((key === ']' || key === 'n') && canGoNextGroup()) action = function () { nextGroup(false); };
+    if ((key === '[' || key === 'b') && state.chunkIndex > 0) action = function () { changeChunk(state.chunkIndex - 1); };
+    if ((key === ']' || key === 'n') && canGoNextGroup()) action = function () { nextGroup(); };
     if (/^[1-9]$/.test(key)) {
       var index = getSelectedFieldIndexes()[Number(key) - 1];
       if (index !== undefined) action = function () { toggleColumn(index); };

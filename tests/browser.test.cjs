@@ -851,12 +851,131 @@ test('column visibility complements Fields and Repeat group preserves configurat
   assert.equal(await page.locator('[data-column-toggle]:not([data-column-toggle="answer"])').count(), 2);
 });
 
+test('all previous/next shortcuts focus the first answer and accept immediate typing', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await enableAnswers(page);
+  await page.locator('#nextButton').focus();
+  for (const key of [']', '[', 'n', 'b', 'N', 'B']) {
+    const group = [']', 'n', 'N'].includes(key) ? '1' : '0';
+    await page.keyboard.press(key);
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.answer-input'));
+    assert.equal(await page.locator('#rangeSelect').inputValue(), group, `${key} navigates to the expected group`);
+    assert.equal(await page.locator('.item-number').first().textContent(), group === '1' ? '6' : '1');
+    await page.keyboard.type('answer [ ] b n B N');
+    assert.equal(await page.locator('.answer-input').first().inputValue(), 'answer [ ] b n B N', `${key} leaves typing in the first answer`);
+    assert.equal(await page.locator('#rangeSelect').inputValue(), group, 'Navigation letters remain text while typing');
+    await page.locator('.answer-input').first().evaluate(input => input.blur());
+  }
+});
+
+test('type, check, navigate, type works without mouse interaction', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await enableAnswers(page);
+  await setPracticeGroupSize(page, 1);
+  await page.locator('.answer-input').focus();
+  let group = 0;
+  for (const key of [']', ']', '[', 'n', 'b', 'N', 'B']) {
+    await page.keyboard.type('practice answer');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('.answer-input').evaluate(input => document.activeElement === input), false, 'Checking the last row exits text entry');
+    await page.keyboard.press(key);
+    group += [']', 'n', 'N'].includes(key) ? 1 : -1;
+    await page.waitForFunction(() => document.activeElement === document.querySelector('.answer-input'));
+    assert.equal(await page.locator('#rangeSelect').inputValue(), String(group));
+    assert.equal(await page.locator('.answer-input').inputValue(), '');
+  }
+  await page.keyboard.type('ready to keep typing');
+  assert.equal(await page.locator('.answer-input').inputValue(), 'ready to keep typing');
+});
+
+for (const answers of ['disabled', 'collapsed']) {
+  test(`navigation shortcuts leave focus alone when Answers is ${answers}`, async t => {
+    const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+    await importData(page); await practice(page);
+    if (answers === 'collapsed') {
+      await enableAnswers(page);
+      await page.locator('[data-column-toggle="answer"]').click();
+    }
+    await page.evaluate(() => {
+      window.answerFocusCalls = 0;
+      const original = HTMLInputElement.prototype.focus;
+      HTMLInputElement.prototype.focus = function (...args) {
+        if (this.matches('.answer-input')) window.answerFocusCalls++;
+        return original.apply(this, args);
+      };
+    });
+    for (const key of [']', '[', 'n', 'b', 'N', 'B']) {
+      await page.keyboard.press(key);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await page.locator('#rangeSelect').inputValue(), [']', 'n', 'N'].includes(key) ? '1' : '0');
+      assert.equal(await page.evaluate(() => document.activeElement.matches('.answer-input')), false);
+      assert.equal(await page.evaluate(() => window.answerFocusCalls), 0, 'No hidden or absent answer is asked to focus');
+    }
+  });
+}
+
+test('navigation focus skips disabled, hidden, and read-only answers and tolerates no editable inputs', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await enableAnswers(page);
+  await page.evaluate(() => {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ']', bubbles: true, cancelable: true }));
+    const inputs = document.querySelectorAll('.answer-input');
+    inputs[0].disabled = true;
+    inputs[1].closest('.answer-wrap').hidden = true;
+    inputs[2].style.visibility = 'hidden';
+    inputs[3].readOnly = true;
+  });
+  await page.waitForFunction(() => document.activeElement === document.querySelectorAll('.answer-input')[4]);
+  await page.keyboard.type('first editable answer');
+  assert.equal(await page.locator('.answer-input').nth(4).inputValue(), 'first editable answer');
+  await page.locator('.answer-input').nth(4).evaluate(input => input.blur());
+  for (const unavailable of ['disabled', 'hidden']) {
+    await page.evaluate(unavailable => {
+      window.answerFocusCalls = 0;
+      const key = document.querySelector('#rangeSelect').value === '1' ? '[' : ']';
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      document.querySelectorAll('.answer-input').forEach(input => {
+        input.focus = () => window.answerFocusCalls++;
+        if (unavailable === 'disabled') input.disabled = true;
+        else input.closest('.answer-wrap').hidden = true;
+      });
+    }, unavailable);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.locator('#rangeSelect').inputValue(), unavailable === 'disabled' ? '0' : '1');
+    assert.equal(await page.evaluate(() => window.answerFocusCalls), 0);
+    assert.equal(await page.evaluate(() => document.activeElement.matches('.answer-input')), false);
+  }
+});
+
+test('Next shortcuts focus the first answer when restarting either kind of loop', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await enableAnswers(page);
+  for (const mode of ['loop', 'shuffle']) {
+    await page.locator('#reviewLoop').selectOption(mode);
+    for (const key of [']', 'n', 'N']) {
+      await page.locator('#rangeSelect').selectOption('2');
+      await page.waitForFunction(() => document.activeElement === document.querySelector('.answer-input'));
+      await page.locator('.answer-input').first().evaluate(input => input.blur());
+      await page.keyboard.press(key);
+      await page.waitForFunction(() => document.querySelector('#rangeSelect').value === '0' && document.activeElement === document.querySelector('.answer-input'));
+      await page.keyboard.type('new round');
+      assert.equal(await page.locator('.answer-input').first().inputValue(), 'new round');
+    }
+  }
+});
+
 test('shortcuts leave browser modifiers, text inputs, IME, dialogs, and normal controls alone', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
   await enableAnswers(page);
   for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { ctrlKey: true, altKey: true }, { isComposing: true }, { repeat: true }]) {
     assert.equal(await outsideKeys(page, 'v', modifiers), false);
+  }
+  for (const key of ['[', ']', 'b', 'n', 'B', 'N']) {
+    for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { modifierAltGraph: true }, { isComposing: true }, { keyCode: 229 }, { repeat: true }]) {
+      assert.equal(await outsideKeys(page, key, modifiers), false);
+      assert.equal(await page.locator('#rangeSelect').inputValue(), '0');
+    }
   }
   assert.equal(await outsideKeys(page, ' '), false);
   assert.equal(await outsideKeys(page, 'ArrowRight'), false);
