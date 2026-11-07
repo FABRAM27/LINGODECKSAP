@@ -776,12 +776,32 @@
   function focusFirstAnswerInput() {
     if (!isAnswerColumnVisible()) return;
     window.requestAnimationFrame(function () {
-      if (els.practiceView.hidden || !isAnswerColumnVisible()) return;
-      var firstInput = Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input:not(:disabled):not([readonly])')).find(function (input) {
-        return input.getClientRects().length > 0 && window.getComputedStyle(input).visibility === 'visible';
-      });
+      var firstInput = getEditableAnswerInputs()[0];
       if (firstInput) firstInput.focus();
     });
+  }
+
+  function getEditableAnswerInputs() {
+    if (els.practiceView.hidden || !isAnswerColumnVisible()) return [];
+    return Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input:not(:disabled):not([readonly])')).filter(function (input) {
+      return input.getClientRects().length > 0 && window.getComputedStyle(input).visibility === 'visible';
+    });
+  }
+
+  function moveAnswerFocus(direction) {
+    var editable = getEditableAnswerInputs();
+    if (!editable.length) return false;
+    var inputs = Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input'));
+    var current = inputs.indexOf(document.activeElement);
+    if (current < 0) editable[0].focus({ preventScroll: true });
+    else {
+      for (var i = current + direction; i >= 0 && i < inputs.length; i += direction) {
+        if (editable.indexOf(inputs[i]) < 0) continue;
+        inputs[i].focus({ preventScroll: true });
+        break;
+      }
+    }
+    return true;
   }
 
   function checkAnswer(localIndex) {
@@ -997,14 +1017,21 @@
   function handleShortcut(event) {
     if (!library.preferences.shortcuts || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || hasShortcutModifier(event)) return;
     var target = event.target;
-    if (target instanceof Element && (target.closest('input, textarea, select') || target.isContentEditable || target.closest('[contenteditable]:not([contenteditable="false"])'))) return;
+    var isAnswerArrow = (event.key === 'ArrowUp' || event.key === 'ArrowDown') && target instanceof Element && target.matches('.answer-input') && els.practiceTableBody.contains(target);
+    if (!isAnswerArrow && target instanceof Element && (target.closest('input, textarea, select') || target.isContentEditable || target.closest('[contenteditable]:not([contenteditable="false"])'))) return;
     if (document.querySelector('dialog[open]') || !els.deckMenu.hidden) return;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      if (event.shiftKey || els.practiceView.hidden) return;
+      if (target instanceof Element && (target.closest('a') || (target !== document.body && target !== document.documentElement && !els.practiceView.contains(target)))) return;
+      if (moveAnswerFocus(event.key === 'ArrowUp' ? -1 : 1)) event.preventDefault();
+      return;
+    }
     if (event.key === '?') { event.preventDefault(); openSettings(); return; }
     if (els.practiceView.hidden || !state.activeRows.length) return;
     var key = event.key.toLocaleLowerCase();
     var action = null;
-    if ((key === '[' || key === 'b') && state.chunkIndex > 0) action = function () { changeChunk(state.chunkIndex - 1); };
-    if ((key === ']' || key === 'n') && canGoNextGroup()) action = function () { nextGroup(); };
+    if ((key === '{' || key === 'b') && state.chunkIndex > 0) action = function () { changeChunk(state.chunkIndex - 1); };
+    if ((key === '}' || key === 'n') && canGoNextGroup()) action = function () { nextGroup(); };
     if (/^[1-9]$/.test(key)) {
       var index = getSelectedFieldIndexes()[Number(key) - 1];
       if (index !== undefined) action = function () { toggleColumn(index); };

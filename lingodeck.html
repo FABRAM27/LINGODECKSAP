@@ -304,9 +304,9 @@
         <p class="settings-note">Typing is optional. Fields chooses your languages; column buttons show or hide them.</p>
       </fieldset>
       <fieldset><legend>Keyboard shortcuts</legend>
-        <label class="settings-row"><input id="enableShortcuts" type="checkbox" checked> Enable shortcuts outside text fields</label>
-        <dl class="shortcut-list"><dt><kbd>B</kbd> / <kbd>N</kbd></dt><dd>Previous / next group (also [ / ])</dd><dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Show / hide an included column</dd><dt><kbd>V</kbd></dt><dd>Reveal / hide all</dd><dt><kbd>R</kbd></dt><dd>Replay the last visible pronunciation</dd><dt><kbd>F</kbd></dt><dd>Fields</dd><dt><kbd>K</kbd></dt><dd>Useful keys</dd><dt><kbd>P</kbd></dt><dd>Repeat group, when enabled</dd><dt><kbd>?</kbd></dt><dd>Settings and shortcut help</dd></dl>
-        <p class="settings-note">Practice shortcuts never use Ctrl, Command, Alt, or AltGr. Text entry, composition, dialogs, browser shortcuts, Space, and normal control navigation keep their usual behavior. Enter checks an answer only inside its answer field.</p>
+        <label class="settings-row"><input id="enableShortcuts" type="checkbox" checked> Enable keyboard shortcuts</label>
+        <dl class="shortcut-list"><dt><kbd>B</kbd> / <kbd>N</kbd></dt><dd>Previous / next group (also { / })</dd><dt><kbd>↑</kbd> / <kbd>↓</kbd></dt><dd>Previous / next editable answer in this group; first answer if none is active</dd><dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Show / hide an included column</dd><dt><kbd>V</kbd></dt><dd>Reveal / hide all</dd><dt><kbd>R</kbd></dt><dd>Replay the last visible pronunciation</dd><dt><kbd>F</kbd></dt><dd>Fields</dd><dt><kbd>K</kbd></dt><dd>Useful keys</dd><dt><kbd>P</kbd></dt><dd>Repeat group, when enabled</dd><dt><kbd>?</kbd></dt><dd>Settings and shortcut help</dd></dl>
+        <p class="settings-note">Group and action shortcuts stay inactive in text fields. Up/Down only move answer focus; Enter checks an answer. Ctrl, Command, Alt, AltGr, Shift+arrows, composition, dialogs, browser shortcuts, Space, and other controls keep their usual behavior.</p>
       </fieldset>
       <fieldset><legend>Library</legend>
         <div class="settings-row"><button class="button button-secondary" id="backupButton" type="button">Back up library</button><label class="button button-secondary" for="backupInput" tabindex="0" role="button" id="restoreBackupLabel">Restore backup</label><input id="backupInput" type="file" accept=".json,application/json"></div>

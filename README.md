@@ -202,14 +202,16 @@ feedback alongside color. Reduced-motion preferences disable decorative motion.
 
 ## Keyboard shortcuts
 
-Shortcuts can be disabled in Settings. They operate outside inputs, editable text,
-select controls, open dialogs, and the open deck menu. They ignore composition,
-held-key repeats, Ctrl, Command, Alt, and AltGr. Normal Space, arrow navigation,
-browser shortcuts, and native control activation remain available.
+Shortcuts can be disabled in Settings. Group and action shortcuts operate outside
+inputs, editable text, select controls, open dialogs, and the open deck menu.
+They ignore composition, held-key repeats, Ctrl, Command, Alt, and AltGr. Normal
+Space, arrow navigation, browser shortcuts, and native control activation remain
+available.
 
 | Key | Action in Practice |
 | --- | --- |
-| B / N | Previous / next group; `[` / `]` also work |
+| B / N | Previous / next group; `{` / `}` also work (actual typed characters) |
+| ↑ / ↓ | Previous / next editable answer in this group; focus the first if none is active |
 | 1–9 | Show/hide the corresponding included column |
 | V | Reveal/hide all references |
 | R | Replay the last pronunciation if its reference is still visible |
@@ -222,6 +224,11 @@ Enter inside an answer field checks it. Browser modifiers and IME composition
 are ignored there too. Group shortcuts and navigation buttons focus the first
 visible, enabled answer input in the new group, ready for typing. If Answers is
 disabled, collapsed, or has no editable input, navigation leaves focus alone.
+Up/Down skip hidden, disabled, and read-only answers without wrapping or changing
+groups. They only move focus, preserve typed text and results, and prevent page
+scrolling when handled. Dropdowns, dialogs, other text fields, and unrelated
+controls retain their normal arrow behavior; Shift+arrow retains text selection.
+Square brackets no longer navigate groups.
 
 ## Saved data and backups
 
