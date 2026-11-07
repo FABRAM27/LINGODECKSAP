@@ -96,6 +96,9 @@
         <div class="library-controls" id="libraryControls" hidden>
           <label for="libraryFilter">Deck library</label>
           <select id="libraryFilter"><option value="all">All decks</option><option value="completed">Completed decks</option></select>
+          <label class="source-retain-option"><input id="retainHeaders" type="checkbox" aria-describedby="sourceRetentionHint"> Retain table headers</label>
+          <label class="source-retain-option"><input id="retainLanguages" type="checkbox" aria-describedby="sourceRetentionHint"> Retain column languages</label>
+          <span class="sr-only" id="sourceRetentionHint">Reuse current headers or languages on every deck load, aligned from the right. Extra columns are added on the left with generic headers and English.</span>
           <button class="button button-danger-soft" id="deleteDeckButton" type="button">Delete selected deck</button>
         </div>
 
@@ -286,6 +289,7 @@
         <div class="settings-row"><label for="practiceGroupSize">Entries per practice group</label><input id="practiceGroupSize" type="number" min="1" step="1" max="9007199254740991" value="5" required inputmode="numeric" aria-describedby="practiceGroupSizeHint practiceGroupSizeError" aria-invalid="false"></div>
         <p class="settings-note" id="practiceGroupSizeHint">Default: 5. Press Enter or leave this field to apply. Vocabulary order is kept.</p>
         <p class="settings-note settings-error" id="practiceGroupSizeError" role="status" hidden></p>
+        <label class="settings-row"><input id="answersEnabled" type="checkbox"> Enable Answers column</label>
         <label class="settings-row"><input id="repeatPasses" type="checkbox"> Enable Repeat group, preserving order and column visibility</label>
         <div class="settings-row"><label for="answerField">Check typed answers against</label><select id="answerField"><option value="-1">Any included field</option></select></div>
         <p class="settings-note">Typing is optional. Fields chooses your languages; column buttons show or hide them.</p>

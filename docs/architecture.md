@@ -58,6 +58,19 @@ row/column audio engines.
 - **Fields** inclusion and column visibility are separate. Row and global reveal
   overrides keep their current behavior. Answer-column collapse is visual only;
   revealing a row retains the existing answer-clearing/disabling behavior.
+- `preferences.answersEnabled` defaults to false. Off omits answer header/cells
+  from the DOM; it does not erase per-deck `answerCollapsed`, validation settings,
+  or record-keyed attempts. Enabling restores the existing collapse control.
+  Useful Keys and answer-field focus are gated by both enablement and visibility.
+- Source's independent `retainHeaders` and `retainLanguages` preferences default
+  off. With retention enabled, `retainedHeaders`/`retainedLanguages` store exactly
+  the current column list, not older discarded columns. On every deck retrieval,
+  align metadata with `sourceIndex = targetIndex + sourceWidth - targetWidth`,
+  overriding the selected metadata even for configured decks. Extra left columns
+  use sequential generic headers and English. Fields inclusion/visibility and
+  record contents/order stay unchanged. Without retention, normal per-deck
+  settings and defaults continue to apply. These are version-1 backup additions,
+  not a database migration.
 - Keep exact-locale/family matching, natural/enhanced voice ranking, asynchronous
   voice discovery, current speed, and local retry. An engine or library rewrite
   is not part of this reorganization. Actual available voices remain a browser,

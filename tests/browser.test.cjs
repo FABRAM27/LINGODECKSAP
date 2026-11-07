@@ -67,6 +67,11 @@ async function practice(page) {
   await page.locator('#retrieveButton').click();
   await page.locator('#practiceTab').click();
 }
+async function enableAnswers(page) {
+  await page.locator('#settingsButton').click();
+  await page.getByLabel('Enable Answers column', { exact: true }).check();
+  await page.locator('#closeSettingsButton').click();
+}
 async function outsideKeys(page, key, modifiers = {}) {
   return page.evaluate(({ key, modifiers }) => {
     const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers });
@@ -83,6 +88,170 @@ async function setPracticeGroupSize(page, size, commitKey = 'Enter') {
   assert.equal(await input.getAttribute('aria-invalid'), 'false');
   await page.locator('#closeSettingsButton').click();
 }
+
+test('Answers is off by default, is removed entirely, and can be re-enabled without losing its show/hide state or attempts', async t => {
+  const { page } = await setup(t, true, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page);
+  assert.equal(await page.locator('#practiceTable .answer-col').count(), 0);
+  assert.equal(await page.locator('.answer-input').count(), 0);
+  assert.equal(await page.locator('[data-column-toggle="answer"]').count(), 0);
+  assert.equal(await page.locator('#practiceTableHead th').count(), 4);
+  assert.equal(await page.locator('#practiceTableBody tr').first().locator('td').count(), 4);
+  assert.equal(await page.locator('#keysButton').isDisabled(), true);
+  await page.locator('[data-reveal-row="0"]').click();
+  assert.equal(await page.locator('.reference-content').count(), 3);
+  await page.locator('[data-reveal-row="0"]').click();
+  assert.equal(await outsideKeys(page, 'n'), true);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['6', '7', '8', '9', '10']);
+  assert.equal(await outsideKeys(page, 'b'), true);
+  await page.locator('[data-speak-column="1"]').click();
+  await page.waitForFunction(() => speechLog.length === 5 && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false');
+  assert.equal(await page.evaluate(() => speechLog.every(item => item.voice === 'Microsoft Katja Online Natural')), true);
+  await page.locator('#settingsButton').click();
+  assert.equal(await page.getByLabel('Enable Answers column', { exact: true }).isChecked(), false);
+  assert.equal(await page.locator('#answerField').isDisabled(), true);
+  await page.getByLabel('Enable Answers column', { exact: true }).check();
+  assert.equal(await page.locator('#answerField').isDisabled(), false);
+  await page.locator('#closeSettingsButton').click();
+  assert.equal(await page.locator('#practiceTable .answer-col').count(), 6);
+  await page.locator('.answer-input').first().fill('the cause');
+  await page.locator('.answer-input').first().press('Enter');
+  await page.locator('[data-column-toggle="answer"]').click();
+  await page.locator('#settingsButton').click();
+  await page.getByLabel('Enable Answers column', { exact: true }).uncheck();
+  assert.equal(await page.locator('#practiceTable .answer-col').count(), 0);
+  await page.getByLabel('Enable Answers column', { exact: true }).check();
+  await page.locator('#closeSettingsButton').click();
+  assert.equal(await page.locator('[data-column-toggle="answer"]').getAttribute('aria-pressed'), 'false');
+  assert.equal(await page.locator('.answer-input').first().isVisible(), false);
+  await page.locator('[data-column-toggle="answer"]').click();
+  assert.equal(await page.locator('.answer-input').first().inputValue(), 'the cause');
+  assert.equal(await page.locator('.answer-wrap.is-correct').count(), 1);
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.preferences.answersEnabled && !saved.deckSettings[saved.session.deck].answerCollapsed;
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.locator('#practiceTable .answer-col').count(), 6);
+  await page.locator('#settingsButton').click();
+  assert.equal(await page.getByLabel('Enable Answers column', { exact: true }).isChecked(), true);
+  await page.getByLabel('Enable Answers column', { exact: true }).uncheck();
+  await page.locator('#closeSettingsButton').click();
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.preferences.answersEnabled === false;
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.locator('#practiceTable .answer-col').count(), 0);
+});
+
+for (const [headers, assignedLanguages] of [[false, false], [true, false], [false, true], [true, true]]) {
+  test(`Source retain options are independent: headers ${headers}, languages ${assignedLanguages}`, async t => {
+    const { page } = await setup(t, true, { reducedMotion: 'reduce' });
+    await importData(page, 'Basic|Origin|bird↑Vogel↑Example');
+    await page.locator('#retrieveButton').click();
+    for (let i = 0; i < 3; i++) {
+      await page.locator(`#fieldName${i}`).fill(['Prompt', 'Translation', 'Context'][i]);
+      await page.locator(`#fieldLanguage${i}`).selectOption(['de-DE', 'es-ES', 'fr-FR'][i]);
+    }
+    await page.locator('#retainHeaders').setChecked(headers);
+    await page.locator('#retainLanguages').setChecked(assignedLanguages);
+    await importData(page, 'Basic|Target|house↑Haus↑Example↑More');
+    await page.locator('#retrieveButton').click();
+    assert.deepEqual(await page.locator('[data-field-name]').evaluateAll(inputs => inputs.map(input => input.value)), headers ? ['Field 1', 'Prompt', 'Translation', 'Context'] : ['Field 1', 'Field 2', 'Field 3', 'Field 4']);
+    assert.deepEqual(await page.locator('[data-field-language]').evaluateAll(inputs => inputs.map(input => input.value)), assignedLanguages ? ['en-US', 'de-DE', 'es-ES', 'fr-FR'] : ['en-US', 'de-DE', 'en-US', 'en-US']);
+    await page.locator('#practiceTab').click();
+    await page.locator('[data-speak-column="0"]').click();
+    await page.waitForFunction(() => speechLog.length === 1 && document.querySelector('[data-speak-column="0"]').getAttribute('aria-pressed') === 'false');
+    assert.equal(await page.evaluate(() => speechLog[0].lang), 'en-US');
+    assert.equal(await page.evaluate(() => speechLog[0].voice), 'Microsoft Ava Online Natural');
+    await page.locator('[data-speak-column="1"]').click();
+    await page.waitForFunction(() => speechLog.length === 2 && document.querySelector('[data-speak-column="1"]').getAttribute('aria-pressed') === 'false');
+    assert.equal(await page.evaluate(() => speechLog[1].lang), 'de-DE');
+    assert.equal(await page.evaluate(() => speechLog[1].voice), 'Microsoft Katja Online Natural');
+  });
+}
+
+test('Source retain options override existing deck metadata but preserve field visibility', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page, 'Basic|Known|one↑eins'); await page.locator('#retrieveButton').click();
+  await page.locator('#fieldName0').fill('Known prompt');
+  await page.locator('#fieldLanguage0').selectOption('it-IT');
+  await page.locator('#practiceTab').click(); await page.locator('[data-column-toggle="0"]').click();
+  await page.locator('#sourceTab').click();
+  await importData(page, 'Basic|Origin|bird↑Vogel'); await page.locator('#retrieveButton').click();
+  await page.locator('#fieldName0').fill('New prompt');
+  await page.locator('#fieldLanguage0').selectOption('fr-FR');
+  await page.locator('#retainHeaders').check(); await page.locator('#retainLanguages').check();
+  await page.locator('#deckTrigger').click(); await page.locator('[data-deck="Known"]').click();
+  await page.locator('#retrieveButton').click();
+  assert.equal(await page.locator('#fieldName0').inputValue(), 'New prompt');
+  assert.equal(await page.locator('#fieldLanguage0').inputValue(), 'fr-FR');
+  await page.locator('#practiceTab').click();
+  assert.equal(await page.locator('[data-column-toggle="0"]').getAttribute('aria-pressed'), 'true');
+});
+
+test('Source retain options survive reload and backups with only the current right-aligned columns', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page, 'Basic|Origin|bird↑Vogel↑Example'); await page.locator('#retrieveButton').click();
+  for (let i = 0; i < 3; i++) {
+    await page.locator(`#fieldName${i}`).fill(['Prompt', 'Translation', 'Context'][i]);
+    await page.locator(`#fieldLanguage${i}`).selectOption(['de-DE', 'es-ES', 'fr-FR'][i]);
+  }
+  await page.locator('#retainHeaders').check(); await page.locator('#retainLanguages').check();
+  await importData(page, 'Basic|Short|house↑Haus'); await page.locator('#retrieveButton').click();
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.session.deck === 'Short' && saved.preferences.retainedHeaders.length === 2 && saved.preferences.retainedHeaders[1] === 'Context';
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.locator('#retainHeaders').isChecked(), true);
+  assert.equal(await page.locator('#retainLanguages').isChecked(), true);
+  assert.equal(await page.locator('#fieldName0').inputValue(), 'Translation');
+  await page.locator('#settingsButton').click();
+  const downloading = page.waitForEvent('download'); await page.locator('#backupButton').click();
+  const stream = await (await downloading).createReadStream();
+  const chunks = []; for await (const chunk of stream) chunks.push(chunk);
+  const backup = Buffer.concat(chunks);
+  assert.deepEqual(JSON.parse(backup).preferences.retainedHeaders, ['Translation', 'Context']);
+  await page.locator('#closeSettingsButton').click();
+  await page.locator('#retainHeaders').uncheck(); await page.locator('#retainLanguages').uncheck();
+  await page.locator('#settingsButton').click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#backupInput').setInputFiles({ name: 'retained-columns.json', mimeType: 'application/json', buffer: backup });
+  await page.waitForFunction(() => !document.querySelector('#settingsDialog').open);
+  assert.equal(await page.locator('#retainHeaders').isChecked(), true);
+  assert.equal(await page.locator('#retainLanguages').isChecked(), true);
+  await importData(page, 'Basic|Wide|dog↑Hund↑Example↑Extra'); await page.locator('#retrieveButton').click();
+  assert.deepEqual(await page.locator('[data-field-name]').evaluateAll(inputs => inputs.map(input => input.value)), ['Field 1', 'Field 2', 'Translation', 'Context']);
+  assert.deepEqual(await page.locator('[data-field-language]').evaluateAll(inputs => inputs.map(input => input.value)), ['en-US', 'en-US', 'es-ES', 'fr-FR']);
+  assert.equal(await page.locator('#recordCount').textContent(), '3');
+});
+
+test('Source retention adds and removes columns only on the left across five, six, three, and five columns', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page, 'Basic|Five|a↑b↑c↑d↑e'); await page.locator('#retrieveButton').click();
+  const names = ['English', 'German', 'Spanish', 'French', 'Italian'];
+  const codes = ['en-US', 'de-DE', 'es-ES', 'fr-FR', 'it-IT'];
+  for (let i = 0; i < 5; i++) {
+    await page.locator(`#fieldName${i}`).fill(names[i]);
+    await page.locator(`#fieldLanguage${i}`).selectOption(codes[i]);
+  }
+  await page.locator('#retainHeaders').check(); await page.locator('#retainLanguages').check();
+  for (const [deck, values, expectedNames, expectedLanguages] of [
+    ['Six', ['x', 'a', 'b', 'c', 'd', 'e'], ['Field 1', ...names], ['en-US', ...codes]],
+    ['Three', ['c', 'd', 'e'], names.slice(2), codes.slice(2)],
+    ['FiveAgain', ['x', 'y', 'c', 'd', 'e'], ['Field 1', 'Field 2', ...names.slice(2)], ['en-US', 'en-US', ...codes.slice(2)]]
+  ]) {
+    await importData(page, `Basic|${deck}|${values.join('↑')}`); await page.locator('#retrieveButton').click();
+    assert.deepEqual(await page.locator('[data-field-name]').evaluateAll(inputs => inputs.map(input => input.value)), expectedNames);
+    assert.deepEqual(await page.locator('[data-field-language]').evaluateAll(inputs => inputs.map(input => input.value)), expectedLanguages);
+    assert.deepEqual(await page.locator('#sourceTableBody tr td:not(.number-col)').allTextContents(), values, 'Only metadata aligns; vocabulary fields never move');
+  }
+});
 
 for (const size of [1, 4, 5, 6, 20]) {
   test(`practice group size ${size} keeps row order, ranges, navigation, progress, and column audio consistent`, async t => {
@@ -128,6 +297,7 @@ for (const size of [1, 4, 5, 6, 20]) {
 test('changing practice group size anchors the previous first entry and preserves fields, visibility, attempts, pronunciation replay, and completion', async t => {
   const { page } = await setup(t, true, { reducedMotion: 'reduce' });
   await importData(page); await practice(page);
+  await enableAnswers(page);
   await page.locator('#fieldsButton').click();
   await page.locator('[data-field-toggle="2"]').uncheck();
   await page.locator('#applyFieldsButton').click();
@@ -367,6 +537,7 @@ test('the reorganized app reopens the legacy IndexedDB library and increments it
 test('column visibility complements Fields and Repeat group preserves configuration and order', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
+  await enableAnswers(page);
   await page.locator('[data-column-toggle="0"]').click();
   assert.equal(await page.locator('.reference-content').count(), 5);
   await page.locator('.answer-input').first().fill('the cause');
@@ -390,6 +561,7 @@ test('column visibility complements Fields and Repeat group preserves configurat
 test('shortcuts leave browser modifiers, text inputs, IME, dialogs, and normal controls alone', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
+  await enableAnswers(page);
   for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { ctrlKey: true, altKey: true }, { isComposing: true }, { repeat: true }]) {
     assert.equal(await outsideKeys(page, 'v', modifiers), false);
   }
@@ -434,6 +606,7 @@ test('shortcuts leave browser modifiers, text inputs, IME, dialogs, and normal c
 test('Useful Keys inserts at the caret and excludes Japanese and Korean', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
+  await enableAnswers(page);
   await page.locator('#keysButton').click();
   assert.equal(await page.locator('#keyLanguage option[value="ko-KR"]').isDisabled(), true);
   assert.equal(await page.locator('#keyLanguage option[value="ja-JP"]').isDisabled(), true);
@@ -530,6 +703,7 @@ test('backup round-trip keeps library data and deletion is explicit', async t =>
 test('Enter skips revealed rows; mobile layout contains the table; file imports preserve parser behavior', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
+  await enableAnswers(page);
   await page.locator('[data-reveal-row="1"]').click();
   await page.locator('.answer-input').first().fill('the cause');
   await page.locator('.answer-input').first().press('Enter');
@@ -653,6 +827,7 @@ test('practice headers expose aligned, accessible icon controls even when their 
 test('row reference toggles sit beside every item number and independently preserve existing reveal behavior', async t => {
   const { page } = await setup(t, false, { reducedMotion: 'reduce' });
   await importData(page); await practice(page);
+  await enableAnswers(page);
   const rows = page.locator('#practiceTableBody tr');
   assert.equal(await rows.count(), 5);
   assert.equal(await page.locator('#practiceTableHead th').count(), 5, 'No redundant Reference-controls column');
@@ -717,6 +892,7 @@ test('row reference toggles sit beside every item number and independently prese
 test('collapsing answers preserves input nodes, values, validation results, and saved column preferences', async t => {
   const { page } = await setup(t);
   await importData(page); await practice(page);
+  await enableAnswers(page);
   const input = page.locator('.answer-input').first();
   await input.fill('the cause'); await input.press('Enter');
   await input.evaluate(element => { window.originalAnswer = element; });
@@ -769,6 +945,7 @@ test('column audio follows current-group order, skips empty cells, and uses its 
 test('column playback can be stopped or replaced without stale completions advancing another queue', async t => {
   const { page } = await setup(t, true);
   await importData(page); await practice(page);
+  await enableAnswers(page);
   await page.evaluate(() => { window.holdSpeech = true; });
   const english = page.locator('[data-speak-column="0"]');
   const german = page.locator('[data-speak-column="1"]');
@@ -920,6 +1097,7 @@ test('all five gradient palettes preview their backgrounds and persist without l
 test('themes, collapsed headers, and icon touch targets remain usable on narrow screens', async t => {
   const { page } = await setup(t, false, { hasTouch: true });
   await importData(page); await practice(page);
+  await enableAnswers(page);
   await page.locator('[data-column-toggle="answer"]').click();
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -952,6 +1130,11 @@ test('themes, collapsed headers, and icon touch targets remain usable on narrow 
       return { gap: button.left - number.right, aligned: Math.abs(number.top + number.height / 2 - button.top - button.height / 2) < 1 };
     });
     assert.ok(rowLayout.gap >= 8 && rowLayout.aligned, `Row controls stay beside numbers at ${width}px`);
+    await page.locator('#sourceTab').click();
+    assert.equal(await page.locator('#retainHeaders').isVisible(), true);
+    assert.equal(await page.locator('#retainLanguages').isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Source retain options fit at ${width}px`);
+    await page.locator('#practiceTab').click();
   }
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('.header-icon').first().evaluate(element => getComputedStyle(element).transitionDuration.split(',').every(duration => parseFloat(duration) <= .001)), true);
@@ -970,6 +1153,8 @@ test('older library backups preserve their content and settings while new appear
   await page.waitForFunction(() => !document.querySelector('#settingsDialog').open);
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'default');
   assert.equal(await page.locator('#recordCount').textContent(), '1');
+  assert.equal(await page.locator('#practiceTable .answer-col').count(), 0, 'Older backups default to Answers disabled');
+  await enableAnswers(page);
   assert.equal(await page.locator('[data-column-toggle="answer"]').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('[data-column-toggle="0"]').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('[data-column-toggle="1"]').getAttribute('aria-pressed'), 'false');
@@ -989,6 +1174,7 @@ test('older library backups preserve their content and settings while new appear
   assert.equal(saved.version, 1);
   assert.deepEqual(saved.records[0].fields, ['bird', 'Vogel']);
   assert.equal(saved.preferences.theme, 'midnight-aurora');
+  assert.equal(saved.preferences.answersEnabled, true);
   assert.equal(saved.deckSettings['Saved::Deck'].answerCollapsed, true);
   assert.equal(saved.deckSettings['Saved::Deck'].answerField, 1);
   assert.equal(saved.completed['Saved::Deck'], oldLibrary.completed['Saved::Deck']);
@@ -996,6 +1182,7 @@ test('older library backups preserve their content and settings while new appear
   await page.locator('#backupInput').setInputFiles({ name: download.suggestedFilename(), mimeType: 'application/json', buffer: Buffer.concat(chunks) });
   await page.waitForFunction(() => !document.querySelector('#settingsDialog').open);
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'midnight-aurora');
+  assert.equal(await page.locator('[data-column-toggle="answer"]').count(), 1);
   assert.equal(await page.locator('.answer-input').first().isVisible(), false);
   assert.equal(await page.locator('#recordCount').textContent(), '1');
   await page.locator('[data-speak-column="1"]').click();

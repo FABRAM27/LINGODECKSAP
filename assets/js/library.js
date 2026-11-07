@@ -6,7 +6,7 @@
   var usefulLetters = Bellasprak.config.usefulLetters;
 
   function createEmptyLibrary() {
-    return { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE', theme: 'default', practiceGroupSize: 5 }, session: {} };
+    return { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE', theme: 'default', practiceGroupSize: 5, answersEnabled: false, retainHeaders: false, retainLanguages: false, retainedHeaders: [], retainedLanguages: [] }, session: {} };
   }
 
   function isValidPracticeGroupSize(value) {
@@ -36,7 +36,12 @@
       repeatPasses: preferences.repeatPasses === true, shortcuts: preferences.shortcuts !== false,
       keys: preferences.keys === true, keyLanguage: Object.hasOwn(usefulLetters, preferences.keyLanguage) ? preferences.keyLanguage : 'de-DE',
       theme: themes.some(function (theme) { return theme.id === preferences.theme; }) ? preferences.theme : 'default',
-      practiceGroupSize: isValidPracticeGroupSize(preferences.practiceGroupSize) ? preferences.practiceGroupSize : 5
+      practiceGroupSize: isValidPracticeGroupSize(preferences.practiceGroupSize) ? preferences.practiceGroupSize : 5,
+      answersEnabled: preferences.answersEnabled === true,
+      retainHeaders: preferences.retainHeaders === true,
+      retainLanguages: preferences.retainLanguages === true,
+      retainedHeaders: Array.isArray(preferences.retainedHeaders) ? preferences.retainedHeaders.map(function (name) { return typeof name === 'string' && name.trim() ? name : null; }) : [],
+      retainedLanguages: Array.isArray(preferences.retainedLanguages) ? preferences.retainedLanguages.map(function (code) { return languages.some(function (language) { return language.code === code; }) ? code : null; }) : []
     };
     var session = value.session || {};
     clean.session = { deck: typeof session.deck === 'string' ? session.deck : '', chunk: Number.isInteger(session.chunk) && session.chunk >= 0 ? session.chunk : 0, view: session.view === 'practice' ? 'practice' : 'source' };

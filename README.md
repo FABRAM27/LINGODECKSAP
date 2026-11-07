@@ -63,6 +63,13 @@ before changing module boundaries or storage behavior.
 - Imports add to the browser's library. Importing an existing deck asks before
   updating it; other decks and completion markers are retained.
 - Choose a deck or parent deck and click **Retrieve data**. Record order is kept.
+- Source's **Retain table headers** and **Retain column languages** are independent,
+  opt-in options. When enabled, each reuses the current setup on every deck load,
+  including decks with saved settings, aligned from the right. A wider deck gets
+  extra columns on the left named **Field 1**, **Field 2**, and so on, with English
+  for extra retained-language columns. A narrower deck keeps only the rightmost
+  headers/languages. This changes metadata, not vocabulary fields or their order.
+  Options and the current retained setup persist across visits and backups.
 - Settings → **Entries per practice group** accepts a directly typed positive
   whole number. Press Enter or leave the field to apply. The default is **5**,
   including older saved libraries and backups without this preference. Empty,
@@ -80,7 +87,12 @@ before changing module boundaries or storage behavior.
   action. These controls do not change field inclusion or erase typed answers.
   A column control clears temporary
   row/global reveal overrides so its visibility applies consistently to the group.
-- The **Your answer** header has the same visibility control. Collapsing it only
+- Settings → **Enable Answers column** is off by default, including older libraries
+  without this preference. Off removes the entire column, not just its contents.
+  Enable it to restore optional typed practice and its existing show/hide button.
+  Turning it off and back on preserves current attempts and the deck's collapse
+  preference. Useful Keys remains unavailable while the Answers column is off.
+- When enabled, the **Your answer** header has the same visibility control. Collapsing it only
   hides the input presentation; values, validation results, and field selection
   stay intact. The header remains available to expand it again. This preference
   is saved per deck and kept when changing groups or using Repeat group.

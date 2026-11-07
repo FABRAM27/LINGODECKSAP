@@ -1547,6 +1547,7 @@ dialog[open] {
 .settings-trigger { border: 1px solid var(--nav-line); border-radius: 9px; background: transparent; color: var(--nav-text); padding: 7px 11px; cursor: pointer; }
 .library-controls, .practice-summary, .useful-keys, .settings-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .library-controls { margin: 14px 0; }
+.source-retain-option { display: inline-flex; align-items: center; gap: 6px; padding: 5px 0; cursor: pointer; }
 .library-controls select, .settings-body select, .useful-keys select { max-width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-strong); color: var(--ink); }
 .library-controls .button { margin-left: auto; }
 .practice-summary { padding: 10px 18px; color: var(--ink-2); font-size: .82rem; }

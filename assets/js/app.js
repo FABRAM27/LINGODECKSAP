@@ -92,6 +92,9 @@
   });
   els.practiceGroupSize = document.getElementById('practiceGroupSize');
   els.practiceGroupSizeError = document.getElementById('practiceGroupSizeError');
+  els.answersEnabled = document.getElementById('answersEnabled');
+  els.retainHeaders = document.getElementById('retainHeaders');
+  els.retainLanguages = document.getElementById('retainLanguages');
 
   var libraryStore = Bellasprak.library.createStore(storageWarning);
   var speech = Bellasprak.speech.create({
@@ -146,6 +149,13 @@
       answerCollapsed: state.answerCollapsed,
       chunk: state.chunkIndex
     };
+    rememberSourceColumns();
+  }
+
+  function rememberSourceColumns() {
+    if (!state.fields.length) return;
+    if (library.preferences.retainHeaders) library.preferences.retainedHeaders = state.fields.map(function (field) { return field.name; });
+    if (library.preferences.retainLanguages) library.preferences.retainedLanguages = state.fields.map(function (field) { return field.language; });
   }
 
   function persistLibrary() {
@@ -181,6 +191,8 @@
     state.restoring = true;
     cancelSpeech();
     applyTheme();
+    els.retainHeaders.checked = library.preferences.retainHeaders;
+    els.retainLanguages.checked = library.preferences.retainLanguages;
     state.chunkSize = library.preferences.practiceGroupSize;
     resetPracticeGroupSizeInput();
     state.fields = [];
@@ -435,7 +447,17 @@
     var width = matching.reduce(function (maximum, record) { return Math.max(maximum, record.fields.length); }, 0);
     state.fields = Array.from({ length: width }, function (_, index) {
       var previous = saved.fields && saved.fields[index];
-      return previous ? Object.assign({}, previous) : { name: 'Field ' + (index + 1), language: index === 1 ? 'de-DE' : 'en-US', enabled: true, visible: false };
+      var field = previous ? Object.assign({}, previous) : { name: 'Field ' + (index + 1), language: index === 1 ? 'de-DE' : 'en-US', enabled: true, visible: false };
+      // Retained metadata follows the rightmost columns; record contents never move.
+      if (library.preferences.retainHeaders) {
+        var headerIndex = index + library.preferences.retainedHeaders.length - width;
+        field.name = library.preferences.retainedHeaders[headerIndex] || 'Field ' + (index + 1);
+      }
+      if (library.preferences.retainLanguages) {
+        var languageIndex = index + library.preferences.retainedLanguages.length - width;
+        field.language = library.preferences.retainedLanguages[languageIndex] || 'en-US';
+      }
+      return field;
     });
     if (!state.fields.some(function (field) { return field.enabled; })) state.fields[0].enabled = true;
     state.answerField = Number.isInteger(saved.answerField) && state.fields[saved.answerField] && state.fields[saved.answerField].enabled ? saved.answerField : -1;
@@ -566,7 +588,7 @@
 
     els.practiceTableHead.innerHTML = '<tr>' +
       '<th class="number-col practice-number-col" scope="col"><span aria-hidden="true">#</span><span class="sr-only">Item and reference visibility</span></th>' +
-      '<th class="answer-col' + (state.answerCollapsed ? ' is-collapsed' : '') + '" scope="col"><div class="practice-table-header"><span class="practice-header-title" title="' + escapeAttr(answerContract) + '">Your answer</span><div class="practice-header-actions">' + visibilityControl('answer', !state.answerCollapsed, 'answer') + '</div><span class="answer-contract sr-only">' + escapeHtml(answerContract) + '</span></div></th>' +
+      (library.preferences.answersEnabled ? '<th class="answer-col' + (state.answerCollapsed ? ' is-collapsed' : '') + '" scope="col"><div class="practice-table-header"><span class="practice-header-title" title="' + escapeAttr(answerContract) + '">Your answer</span><div class="practice-header-actions">' + visibilityControl('answer', !state.answerCollapsed, 'answer') + '</div><span class="answer-contract sr-only">' + escapeHtml(answerContract) + '</span></div></th>' : '') +
       dynamicHeaders +
     '</tr>';
 
@@ -597,14 +619,14 @@
             (practice.revealed ? icons.eyeOff : icons.eye) +
           '</button>' +
         '</div></td>' +
-        '<td class="answer-col' + (state.answerCollapsed ? ' is-collapsed' : '') + '">' +
+        (library.preferences.answersEnabled ? '<td class="answer-col' + (state.answerCollapsed ? ' is-collapsed' : '') + '">' +
           '<span class="collapsed-answer" aria-hidden="true"' + (state.answerCollapsed ? '' : ' hidden') + '>•••</span>' +
           '<div class="answer-wrap' + answerClass + '"' + (state.answerCollapsed ? ' hidden' : '') + '>' +
             '<label class="sr-only" for="answer-' + record.id + '">Answer for row ' + rowNumber + '</label>' +
             '<input class="answer-input" id="answer-' + record.id + '" data-local-index="' + localIndex + '" value="' + escapeAttr(practice.value) + '" placeholder="Type, then press Enter" autocomplete="off" spellcheck="false" aria-invalid="' + String(practice.result === 'incorrect') + '"' + (practice.revealed ? ' disabled' : '') + '>' +
             '<span class="answer-mark" aria-hidden="true">' + mark + '</span>' +
           '</div>' +
-        '</td>' +
+        '</td>' : '') +
         referenceCells +
       '</tr>';
     }).join('');
@@ -626,7 +648,7 @@
     els.nextButton.disabled = !hasRows || state.chunkIndex >= chunkCount - 1;
     els.repeatButton.hidden = !library.preferences.repeatPasses;
     els.repeatButton.disabled = !hasRows;
-    els.keysButton.disabled = !hasRows || state.answerCollapsed;
+    els.keysButton.disabled = !hasRows || !isAnswerColumnVisible();
     els.completeDeckButton.disabled = !hasRows;
     els.completeDeckButton.textContent = library.completed[state.activeDeck] ? 'Reviewed today' : 'Mark completed';
     els.undoCompletionButton.hidden = !library.completed[state.activeDeck];
@@ -656,7 +678,7 @@
     renderPractice();
     persistLibrary();
 
-    if (focusAnswer === false || state.answerCollapsed) return;
+    if (focusAnswer === false || !isAnswerColumnVisible()) return;
     window.requestAnimationFrame(function () {
       var firstInput = els.practiceTableBody.querySelector('.answer-input');
       if (firstInput) firstInput.focus();
@@ -685,7 +707,7 @@
     input.setAttribute('aria-invalid', String(practice.result === 'incorrect'));
     els.answerFeedback.textContent = 'Row ' + (state.chunkIndex * state.chunkSize + localIndex + 1) + ': ' + practice.result + '.';
 
-    var nextInput = !state.answerCollapsed && Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input:not(:disabled)')).find(function (item) { return Number(item.dataset.localIndex) > localIndex; });
+    var nextInput = isAnswerColumnVisible() && Array.prototype.slice.call(els.practiceTableBody.querySelectorAll('.answer-input:not(:disabled)')).find(function (item) { return Number(item.dataset.localIndex) > localIndex; });
     if (nextInput) {
       nextInput.focus();
       nextInput.select();
@@ -727,7 +749,12 @@
     if (button) button.focus();
   }
 
+  function isAnswerColumnVisible() {
+    return library.preferences.answersEnabled && !state.answerCollapsed;
+  }
+
   function toggleAnswerColumn() {
+    if (!library.preferences.answersEnabled) return;
     state.answerCollapsed = !state.answerCollapsed;
     els.practiceTable.querySelectorAll('.answer-col').forEach(function (cell) { cell.classList.toggle('is-collapsed', state.answerCollapsed); });
     els.practiceTableBody.querySelectorAll('.answer-wrap').forEach(function (wrap) { wrap.hidden = state.answerCollapsed; });
@@ -749,7 +776,7 @@
     cancelSpeech();
     renderPractice();
     var input = els.practiceTableBody.querySelector('.answer-input');
-    if (input && !state.answerCollapsed) input.focus();
+    if (input && isAnswerColumnVisible()) input.focus();
     showToast('Same group, same order. Column visibility has been kept.', 'info');
   }
 
@@ -758,7 +785,7 @@
   }
 
   function renderUsefulKeys() {
-    els.usefulKeys.hidden = !library.preferences.keys || !state.activeRows.length || state.answerCollapsed;
+    els.usefulKeys.hidden = !library.preferences.keys || !state.activeRows.length || !isAnswerColumnVisible();
     els.keysButton.setAttribute('aria-pressed', String(library.preferences.keys));
     els.keyLanguage.value = library.preferences.keyLanguage;
     var letters = usefulLetters[library.preferences.keyLanguage] || [];
@@ -770,13 +797,14 @@
   }
 
   function toggleUsefulKeys() {
+    if (!library.preferences.answersEnabled) return;
     library.preferences.keys = !library.preferences.keys;
     renderUsefulKeys();
     persistLibrary();
   }
 
   function insertUsefulLetter(letter) {
-    if (state.answerCollapsed) return;
+    if (!isAnswerColumnVisible()) return;
     var last = state.lastAnswer;
     var input = last && document.getElementById(last.id);
     if (!input || input.disabled) { showToast('Choose an editable answer field first.', 'info'); return; }
@@ -793,10 +821,11 @@
     els.speechRate.value = String(library.preferences.rate);
     resetPracticeGroupSizeInput();
     els.repeatPasses.checked = library.preferences.repeatPasses;
+    els.answersEnabled.checked = library.preferences.answersEnabled;
     els.enableShortcuts.checked = library.preferences.shortcuts;
     els.answerField.innerHTML = '<option value="-1">Any included field</option>' + getSelectedFieldIndexes().map(function (index) { return '<option value="' + index + '">' + escapeHtml(state.fields[index].name) + '</option>'; }).join('');
     els.answerField.value = String(state.answerField);
-    els.answerField.disabled = !state.activeRows.length;
+    els.answerField.disabled = !state.activeRows.length || !library.preferences.answersEnabled;
     els.settingsDialog.showModal();
     els.settingsDialog.scrollTop = 0;
     renderVoiceOptions();
@@ -1205,6 +1234,16 @@
   els.completeDeckButton.addEventListener('click', function () { completionAction(false); });
   els.undoCompletionButton.addEventListener('click', function () { completionAction(true); });
   els.libraryFilter.addEventListener('change', renderDeckMenu);
+  els.retainHeaders.addEventListener('change', function () {
+    library.preferences.retainHeaders = els.retainHeaders.checked;
+    rememberSourceColumns();
+    persistLibrary();
+  });
+  els.retainLanguages.addEventListener('change', function () {
+    library.preferences.retainLanguages = els.retainLanguages.checked;
+    rememberSourceColumns();
+    persistLibrary();
+  });
   els.deleteDeckButton.addEventListener('click', deleteSelectedDeck);
   els.cancelImportButton.addEventListener('click', function () { els.importDialog.close('cancel'); });
   els.confirmImportButton.addEventListener('click', function () { els.importDialog.close('update'); });
@@ -1227,6 +1266,12 @@
     applyPracticeGroupSize();
   });
   els.repeatPasses.addEventListener('change', function () { library.preferences.repeatPasses = els.repeatPasses.checked; updatePracticeControls(); persistLibrary(); });
+  els.answersEnabled.addEventListener('change', function () {
+    library.preferences.answersEnabled = els.answersEnabled.checked;
+    els.answerField.disabled = !state.activeRows.length || !library.preferences.answersEnabled;
+    renderPractice();
+    persistLibrary();
+  });
   els.enableShortcuts.addEventListener('change', function () { library.preferences.shortcuts = els.enableShortcuts.checked; persistLibrary(); });
   els.answerField.addEventListener('change', function () { state.answerField = Number(els.answerField.value); state.practice.forEach(function (practice) { practice.result = ''; }); renderPractice(); persistLibrary(); });
   els.backupButton.addEventListener('click', exportLibrary);

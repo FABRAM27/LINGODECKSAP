@@ -73,6 +73,9 @@ test('library defaults and validation preserve the version-1 backup contract', (
   assert.equal(clean.preferences.shortcuts, true);
   assert.equal(clean.preferences.rate, 0.75);
   assert.equal(clean.preferences.practiceGroupSize, 5, 'Older backups default to five entries');
+  assert.equal(clean.preferences.answersEnabled, false, 'Older backups default to Answers disabled');
+  assert.equal(clean.preferences.retainHeaders, false);
+  assert.equal(clean.preferences.retainLanguages, false);
   assert.equal(clean.completed['Parent::Child'], '2026-10-01T12:00:00.000Z');
   assert.deepEqual(plain(clean.session), { deck: 'Parent::Child', chunk: 2, view: 'practice' });
   const old = library.validate({ version: 1, records: [], preferences: { theme: 'unknown', rate: 99 } });
@@ -80,6 +83,35 @@ test('library defaults and validation preserve the version-1 backup contract', (
   assert.equal(old.preferences.rate, 1);
   assert.throws(() => library.validate({ version: 2, records: [] }), /not a supported Bellasprak/);
   assert.throws(() => library.validate({ version: 1, records: [{ deck: 'Broken', fields: null }] }), /invalid record/);
+});
+
+test('quality-of-life preferences default off and retained column templates validate without changing saved deck settings', () => {
+  const { library } = loadModules();
+  const defaults = library.createEmpty().preferences;
+  assert.equal(defaults.answersEnabled, false);
+  assert.equal(defaults.retainHeaders, false);
+  assert.equal(defaults.retainLanguages, false);
+  assert.deepEqual(plain(defaults.retainedHeaders), []);
+  assert.deepEqual(plain(defaults.retainedLanguages), []);
+  const saved = library.validate({ version: 1, records: [], preferences: {
+    answersEnabled: true, retainHeaders: true, retainLanguages: true,
+    retainedHeaders: ['English', 'Deutsch', '', null, 7], retainedLanguages: ['en-US', 'de-DE', 'invalid', null]
+  }, deckSettings: { Known: { fields: [{ name: 'Own name', language: 'fr-FR', enabled: false, visible: true }], answerCollapsed: true } } });
+  assert.equal(saved.preferences.answersEnabled, true);
+  assert.equal(saved.preferences.retainHeaders, true);
+  assert.equal(saved.preferences.retainLanguages, true);
+  assert.deepEqual(plain(saved.preferences.retainedHeaders), ['English', 'Deutsch', null, null, null]);
+  assert.deepEqual(plain(saved.preferences.retainedLanguages), ['en-US', 'de-DE', null, null]);
+  assert.equal(saved.deckSettings.Known.fields[0].name, 'Own name');
+  assert.equal(saved.deckSettings.Known.fields[0].language, 'fr-FR');
+  assert.equal(saved.deckSettings.Known.fields[0].enabled, false);
+  assert.equal(saved.deckSettings.Known.answerCollapsed, true);
+  const malformed = library.validate({ version: 1, records: [], preferences: { answersEnabled: 'true', retainHeaders: 1, retainLanguages: 'true', retainedHeaders: {}, retainedLanguages: 'de-DE' } }).preferences;
+  assert.equal(malformed.answersEnabled, false);
+  assert.equal(malformed.retainHeaders, false);
+  assert.equal(malformed.retainLanguages, false);
+  assert.deepEqual(plain(malformed.retainedHeaders), []);
+  assert.deepEqual(plain(malformed.retainedLanguages), []);
 });
 
 test('practice group size defaults to five and accepts only positive safe whole numbers in saved preferences', () => {
