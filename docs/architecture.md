@@ -75,7 +75,7 @@ row/column audio engines.
   voice discovery, current speed, and local retry. An engine or library rewrite
   is not part of this reorganization. Actual available voices remain a browser,
   operating-system, and connection property.
-- Groups remain ordered and user-controlled. Typed attempts are temporary;
+- Groups remain user-controlled and ordered by default. Typed attempts are temporary;
   completion dates, last deck/group/view, settings, and imported content persist.
 - `preferences.practiceGroupSize` is a global positive safe integer, defaulting to
   5 when missing or invalid. Settings accepts directly typed digits, committing
@@ -86,6 +86,31 @@ row/column audio engines.
   and open the corresponding group for the current deck. Keep field inclusion,
   visibility, completion, and record-keyed temporary attempts intact. This adds a
   backwards-compatible preference, not a database-version migration.
+- `state.activeRows` always retains the selected deck's original record order for
+  Source. Practice slices a separate `state.reviewRows` array. Fisher–Yates swaps
+  references in a copy of the complete `activeRows` list; it never edits records,
+  samples, deduplicates, shuffles groups, or draws the next entry independently.
+  `getCurrentChunk()` is the existing speech controller's unchanged data input.
+- Review order, shuffled status, and `reviewLoop` are temporary controller state.
+  Ordinary navigation, settings, focus, and size changes cannot call the shuffle
+  operation. Only Shuffle, selecting Loop and shuffle, and Next at the end of
+  that mode start shuffled rounds. No loop and Loop changes preserve state.
+  Retrieving/reloading initializes an ordered list and No loop. While shuffled,
+  persistence uses `orderedChunkIndex` rather than a shuffled group ordinal;
+  resizing recalculates both checkpoints independently. No shuffled list enters
+  IndexedDB or a JSON backup.
+- Header progress is `groupIndex / (groupCount - 1)` for multi-group rounds, and
+  zero for empty/single-group cases, with descriptive accessible text. The old
+  in-card indicator keeps its existing convention. Restart cues have an icon,
+  label, and description in addition to theme-aware success colors.
+- `preferences.focusMode` defaults false and only applies a Practice-scoped body
+  class, preserving live nodes and audio. Local-file reminders are tagged
+  `data-kind="local-file"`; critical warnings are not hidden. Source removes the
+  active focus class. CSS slider styling leaves native checkbox semantics and
+  handlers intact, including Fields, and falls back to native high-contrast UI.
+- `assets/js/speech.js` is deliberately unchanged by review controls. Its baseline
+  SHA-256 is guarded in the unit suite; browser tests verify shuffled displayed
+  order flows through the existing playback, settings, and cancellation path.
 
 Browser storage is origin/profile scoped, not stored in `assets/` or beside HTML.
 Changing protocol, hostname, port, browser, profile, or computer does not migrate

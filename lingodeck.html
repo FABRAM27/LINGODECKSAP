@@ -53,6 +53,7 @@
       </div>
       <button class="settings-trigger" id="settingsButton" type="button" aria-haspopup="dialog">Settings</button>
       </div>
+      <div class="header-progress" id="headerProgress" role="progressbar" aria-label="Position in current review round" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="No deck selected" hidden><span id="headerProgressFill"></span></div>
     </header>
 
     <main>
@@ -178,9 +179,10 @@
                 </select>
               </div>
               <button class="button button-secondary icon-button" id="nextButton" type="button" aria-label="Next range" disabled>
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg id="nextArrowIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="m9.5 7 5 5-5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
+                <svg id="nextRestartIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true" hidden><path d="M19 9a7 7 0 1 0 .2 5M19 9V4m0 5h-5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
 
@@ -207,6 +209,13 @@
                 Reset
               </button>
             </div>
+          </div>
+          <div class="review-controls">
+            <button class="button button-secondary" id="shuffleButton" type="button" title="Start a new shuffled round using every entry in this deck" disabled>Shuffle</button>
+            <div class="review-loop-control"><label for="reviewLoop">Review loop</label><select class="range-select" id="reviewLoop" aria-describedby="reviewLoopHint" disabled><option value="none">No loop</option><option value="loop">Loop</option><option value="shuffle">Loop and shuffle</option></select></div>
+            <label class="review-focus-option"><input id="focusMode" type="checkbox"> Focus mode</label>
+            <span class="sr-only" id="reviewLoopHint">Rounds restart only when you choose Next. Shuffle always uses the complete selected deck. Retrieve the deck again to return to its original order.</span>
+            <span class="sr-only" id="roundRestartHint"></span>
           </div>
           <div class="practice-summary">
             <span id="activeDeckName"></span>

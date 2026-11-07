@@ -89,6 +89,299 @@ async function setPracticeGroupSize(page, size, commitKey = 'Enter') {
   await page.locator('#closeSettingsButton').click();
 }
 
+async function currentReviewIds(page) {
+  return page.locator('#practiceTableBody tr').evaluateAll(rows => rows.map(row => row.dataset.recordId));
+}
+async function collectReviewIds(page) {
+  const ids = [];
+  const count = await page.locator('#rangeSelect option').count();
+  for (let group = 0; group < count; group++) {
+    if (await page.locator('#rangeSelect').inputValue() !== String(group)) await page.locator('#rangeSelect').selectOption(String(group));
+    ids.push(...await currentReviewIds(page));
+  }
+  return ids;
+}
+async function seedShuffle(page) {
+  await page.evaluate(() => {
+    let seed = 123456789;
+    window.shuffleDraws = 0;
+    Math.random = () => { window.shuffleDraws++; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  });
+}
+async function readStoredLibrary(page) {
+  return page.evaluate(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved;
+  });
+}
+
+for (const count of [4, 30, 500]) {
+  test(`whole-deck shuffle contains all ${count} entry identities once and never changes Source or stored records`, async t => {
+    const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+    const data = Array.from({ length: count }, (_, i) => `Basic|Review::Deck|${i < 2 ? 'identical↑identisch' : 'word ' + i + '↑Wort ' + i}`).join('↓');
+    await importData(page, data); await practice(page);
+    if (count === 500) await setPracticeGroupSize(page, 100);
+    const stored = await readStoredLibrary(page);
+    const source = await page.locator('#sourceTableBody tr').allTextContents();
+    const expected = stored.records.map(record => record.id);
+    await seedShuffle(page);
+    await page.locator('#shuffleButton').click();
+    assert.equal(await page.locator('#rangeSelect').inputValue(), '0');
+    const shuffled = await collectReviewIds(page);
+    assert.equal(shuffled.length, count);
+    assert.equal(new Set(shuffled).size, count);
+    assert.deepEqual([...shuffled].sort(), [...expected].sort());
+    assert.equal(await page.locator('#nextButton').isDisabled(), true, 'No loop remains finite after manual Shuffle');
+    assert.deepEqual(await page.locator('#sourceTableBody tr').allTextContents(), source);
+    assert.deepEqual((await readStoredLibrary(page)).records, stored.records);
+    const draws = await page.evaluate(() => shuffleDraws);
+    await page.locator('#shuffleButton').click();
+    assert.equal(await page.locator('#rangeSelect').inputValue(), '0');
+    assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+    assert.ok(await page.evaluate(() => shuffleDraws) > draws);
+    if (count > 5) {
+      await page.locator('#nextButton').click();
+      await page.locator('#shuffleButton').click();
+      assert.equal(await page.locator('#rangeSelect').inputValue(), '0', 'An unfinished round can be deliberately replaced');
+    }
+    assert.deepEqual([...(await collectReviewIds(page))].sort(), [...expected].sort());
+    await page.locator('#sourceTab').click();
+    assert.deepEqual(await page.locator('#sourceTableBody tr').allTextContents(), source);
+    await page.locator('#retrieveButton').click(); await page.locator('#practiceTab').click();
+    assert.deepEqual(await collectReviewIds(page), expected, 'Retrieving restores the original ordered workflow');
+    assert.equal(await page.locator('#reviewLoop').inputValue(), 'none');
+  });
+}
+
+test('Loop repeats the current complete sequence only when Next is clicked, with a non-color restart cue', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await setPracticeGroupSize(page, 4);
+  const original = await collectReviewIds(page);
+  assert.equal(await page.locator('#nextButton').isDisabled(), true);
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '100');
+  await page.locator('#reviewLoop').selectOption('loop');
+  assert.equal(await page.locator('#rangeSelect').inputValue(), '3', 'Changing to Loop preserves position');
+  assert.match(await page.locator('#nextButton').getAttribute('class'), /is-round-restart/);
+  assert.equal(await page.locator('#nextRestartIcon').isVisible(), true);
+  assert.equal(await page.locator('#nextArrowIcon').isVisible(), false);
+  assert.match(await page.locator('#nextButton').getAttribute('aria-label'), /Restart/);
+  assert.equal(await page.locator('#nextButton').getAttribute('aria-describedby'), 'roundRestartHint');
+  await page.locator('#nextButton').click();
+  assert.deepEqual(await currentReviewIds(page), original.slice(0, 4));
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+  assert.deepEqual(await collectReviewIds(page), original);
+  await seedShuffle(page); await page.locator('#shuffleButton').click();
+  const shuffled = await collectReviewIds(page), draws = await page.evaluate(() => shuffleDraws);
+  assert.equal(await outsideKeys(page, 'n'), true, 'The existing Next shortcut also restarts a looping round');
+  assert.deepEqual(await collectReviewIds(page), shuffled);
+  assert.equal(await page.evaluate(() => shuffleDraws), draws, 'Loop repeats a shuffled sequence without reshuffling it');
+  await page.locator('#reviewLoop').selectOption('none');
+  assert.equal(await page.locator('#rangeSelect').inputValue(), '3');
+  assert.equal(await page.locator('#nextButton').isDisabled(), true);
+  assert.deepEqual(await currentReviewIds(page), shuffled.slice(12));
+});
+
+test('Loop and shuffle stays stable through navigation and group-size changes and reshuffles only at explicit round starts', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await setPracticeGroupSize(page, 4); await seedShuffle(page);
+  await page.locator('#reviewLoop').selectOption('shuffle');
+  const first = await collectReviewIds(page), draws = await page.evaluate(() => shuffleDraws);
+  assert.equal(first.length, 13); assert.equal(new Set(first).size, 13);
+  await page.locator('#previousButton').click();
+  await page.locator('#rangeSelect').selectOption('1');
+  assert.deepEqual(await currentReviewIds(page), first.slice(4, 8));
+  await setPracticeGroupSize(page, 6);
+  assert.deepEqual(await currentReviewIds(page), first.slice(0, 6), 'Recalculated group contains the old first entry');
+  assert.deepEqual(await collectReviewIds(page), first);
+  assert.equal(await page.evaluate(() => shuffleDraws), draws);
+  await page.locator('#reviewLoop').selectOption('none');
+  assert.deepEqual(await currentReviewIds(page), first.slice(12));
+  assert.equal(await page.locator('#nextButton').isDisabled(), true);
+  await page.locator('#reviewLoop').selectOption('loop');
+  assert.deepEqual(await currentReviewIds(page), first.slice(12));
+  assert.equal(await page.evaluate(() => shuffleDraws), draws);
+  await page.locator('#reviewLoop').selectOption('shuffle');
+  assert.equal(await page.locator('#rangeSelect').inputValue(), '0', 'Selecting Loop and shuffle immediately starts a round');
+  const second = await collectReviewIds(page), secondDraws = await page.evaluate(() => shuffleDraws);
+  assert.ok(secondDraws > draws);
+  assert.deepEqual([...second].sort(), [...first].sort());
+  await page.locator('#nextButton').click();
+  assert.equal(await page.locator('#rangeSelect').inputValue(), '0');
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+  assert.ok(await page.evaluate(() => shuffleDraws) > secondDraws);
+  const third = await collectReviewIds(page);
+  assert.deepEqual([...third].sort(), [...first].sort());
+});
+
+test('unchanged speech reads displayed shuffled entries, honors its settings, and cancels stale playback on Shuffle', async t => {
+  const { page } = await setup(t, true, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await seedShuffle(page);
+  await page.locator('[data-column-toggle="0"]').click();
+  await page.locator('#shuffleButton').click();
+  await page.locator('#nextButton').click();
+  await page.locator('#settingsButton').click(); await page.locator('#speechRate').selectOption('0.75'); await page.locator('#closeSettingsButton').click();
+  const expected = await page.locator('#practiceTableBody [data-practice-field="0"] .reference-text').allTextContents();
+  await page.locator('[data-speak-column="0"]').click();
+  await page.waitForFunction(() => speechLog.length === 5 && document.querySelector('[data-speak-column="0"]').getAttribute('aria-pressed') === 'false');
+  assert.deepEqual(await page.evaluate(() => speechLog.map(item => item.text)), expected);
+  assert.equal(await page.evaluate(() => speechLog.every(item => item.voice === 'Microsoft Ava Online Natural' && item.lang === 'en-US' && item.rate === 0.75)), true);
+  await page.evaluate(() => { window.holdSpeech = true; });
+  await page.locator('[data-speak-column="0"]').click(); await page.waitForFunction(() => speechLog.length === 6);
+  await page.locator('#shuffleButton').click();
+  assert.equal(await page.locator('[data-speak-column="0"]').getAttribute('aria-pressed'), 'false');
+  await page.evaluate(() => speechInstances[5].onend());
+  assert.equal(await page.evaluate(() => speechLog.length), 6);
+});
+
+test('header progress advances, retreats and recalculates without changing the review sequence', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page);
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+  await page.locator('#nextButton').click();
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '50');
+  await page.locator('#nextButton').click();
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '100');
+  await page.locator('#previousButton').click();
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '50');
+  await setPracticeGroupSize(page, 4);
+  assert.ok(Math.abs(Number(await page.locator('#headerProgress').getAttribute('aria-valuenow')) - 100 / 3) < 0.001);
+  assert.match(await page.locator('#headerProgress').getAttribute('aria-valuetext'), /Group 2 of 4/);
+  await page.locator('#sourceTab').click(); assert.equal(await page.locator('#headerProgress').isVisible(), false);
+  await page.locator('#practiceTab').click(); assert.equal(await page.locator('#headerProgress').isVisible(), true);
+});
+
+test('Focus mode releases heading space without replacing inputs, changing state, or stopping speech; Source stays normal', async t => {
+  const { page } = await setup(t, true, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await enableAnswers(page); await seedShuffle(page);
+  await page.locator('#shuffleButton').click(); await page.locator('[data-column-toggle="0"]').click();
+  const word = await page.locator('#practiceTableBody [data-practice-field="0"] .reference-text').first().textContent();
+  const input = page.locator('.answer-input').first(); await input.fill(word); await input.press('Enter');
+  await input.evaluate(element => { window.focusAnswerNode = element; });
+  const ids = await currentReviewIds(page), beforeTop = await page.locator('.practice-card').evaluate(element => element.getBoundingClientRect().top + scrollY);
+  await page.evaluate(() => { const notice = document.querySelector('#storageNotice'); notice.textContent = 'Local-file storage depends on this browser and file location. Keep a library backup in Settings before moving this file.'; notice.dataset.kind = 'local-file'; notice.hidden = false; window.holdSpeech = true; });
+  await page.locator('[data-speak-column="0"]').click(); await page.waitForFunction(() => speechLog.length === 1);
+  const cancellations = await page.evaluate(() => speechCancelCount);
+  await page.getByLabel('Focus mode', { exact: true }).check();
+  assert.equal(await page.locator('#practiceView > .view-heading').isVisible(), false);
+  assert.equal(await page.locator('#storageNotice').isVisible(), false);
+  assert.ok(await page.locator('.practice-card').evaluate(element => element.getBoundingClientRect().top + scrollY) < beforeTop - 60);
+  assert.equal(await input.evaluate(element => element === window.focusAnswerNode), true);
+  assert.equal(await input.inputValue(), word);
+  assert.equal(await page.locator('.answer-wrap.is-correct').count(), 1);
+  assert.deepEqual(await currentReviewIds(page), ids);
+  assert.equal(await page.evaluate(() => speechCancelCount), cancellations);
+  assert.equal(await page.locator('[data-speak-column="0"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.evaluate(() => document.fullscreenElement === null), true);
+  await page.getByLabel('Focus mode', { exact: true }).uncheck();
+  assert.equal(await input.evaluate(element => element === window.focusAnswerNode), true);
+  assert.equal(await page.locator('#practiceView > .view-heading').isVisible(), true);
+  assert.equal(await page.locator('#storageNotice').isVisible(), true);
+  await page.getByLabel('Focus mode', { exact: true }).check();
+  await page.locator('#sourceTab').click();
+  assert.equal(await page.locator('#sourceView .view-heading').isVisible(), true);
+  assert.equal(await page.locator('#storageNotice').isVisible(), true);
+  await page.locator('#practiceTab').click();
+  assert.equal(await page.locator('#practiceView > .view-heading').isVisible(), false);
+  assert.deepEqual(await currentReviewIds(page), ids);
+  await page.waitForFunction(async () => {
+    const db = await new Promise(resolve => { const request = indexedDB.open('lingodeck-library'); request.onsuccess = () => resolve(request.result); });
+    const saved = await new Promise(resolve => { const request = db.transaction('library').objectStore('library').get('current'); request.onsuccess = () => resolve(request.result); });
+    db.close(); return saved.preferences.focusMode === true;
+  });
+  await page.reload(); await ready(page);
+  assert.equal(await page.getByLabel('Focus mode', { exact: true }).isChecked(), true);
+  assert.equal(await page.locator('#practiceView > .view-heading').isVisible(), false);
+  assert.equal(await page.locator('#reviewLoop').inputValue(), 'none');
+});
+
+test('empty and single-group decks handle loop choices and progress without claiming completion', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await page.locator('#practiceTab').click();
+  assert.equal(await page.locator('#shuffleButton').isDisabled(), true);
+  assert.equal(await page.locator('#reviewLoop').isDisabled(), true);
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuetext'), 'No deck selected');
+  await page.getByLabel('Focus mode', { exact: true }).check(); await page.getByLabel('Focus mode', { exact: true }).uncheck();
+  await page.locator('#sourceTab').click(); await importData(page, 'Basic|Single|bird↑Vogel'); await practice(page);
+  await setPracticeGroupSize(page, 6);
+  assert.equal(await page.locator('#nextButton').isDisabled(), true);
+  assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+  assert.match(await page.locator('#headerProgress').getAttribute('aria-valuetext'), /all entries are displayed/);
+  for (const mode of ['loop', 'shuffle']) {
+    await page.locator('#reviewLoop').selectOption(mode);
+    const ids = await currentReviewIds(page);
+    assert.equal(await page.locator('#nextButton').isDisabled(), false);
+    await page.locator('#nextButton').click();
+    assert.deepEqual(await currentReviewIds(page), ids);
+    assert.equal(await page.locator('#headerProgress').getAttribute('aria-valuenow'), '0');
+  }
+  await page.locator('#shuffleButton').click();
+  assert.equal(await page.locator('#practiceTableBody tr').count(), 1);
+  assert.equal(await page.locator('#completeDeckButton').textContent(), 'Mark completed');
+});
+
+test('shuffled navigation and resizing do not replace the saved ordered checkpoint or leak a round into backups', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await practice(page); await page.locator('#rangeSelect').selectOption('2');
+  await page.locator('#shuffleButton').click(); await setPracticeGroupSize(page, 4);
+  await page.locator('#rangeSelect').selectOption('1');
+  await page.locator('#settingsButton').click();
+  const downloading = page.waitForEvent('download'); await page.locator('#backupButton').click();
+  const stream = await (await downloading).createReadStream(); const chunks = []; for await (const chunk of stream) chunks.push(chunk);
+  const saved = JSON.parse(Buffer.concat(chunks));
+  assert.equal(saved.session.chunk, 2, 'Original row 11 stays in ordered group 9–12');
+  assert.equal(saved.deckSettings[saved.session.deck].chunk, 2);
+  assert.equal(Object.hasOwn(saved, 'reviewRows'), false);
+  assert.equal(Object.hasOwn(saved.preferences, 'reviewLoop'), false);
+  await page.locator('#closeSettingsButton').click(); await page.reload(); await ready(page);
+  assert.deepEqual(await page.locator('.item-number').allTextContents(), ['9', '10', '11', '12']);
+  assert.equal(await page.locator('#reviewLoop').inputValue(), 'none');
+  assert.doesNotMatch(await page.locator('#groupPosition').textContent(), /Shuffled/);
+});
+
+test('slider-styled checkboxes keep native labels, keyboard state, Fields selection, and saved preferences', async t => {
+  const { page } = await setup(t, false, { reducedMotion: 'reduce' });
+  await importData(page); await page.locator('#retrieveButton').click();
+  async function slider(selector) {
+    const input = page.locator(selector);
+    const style = await input.evaluate(element => ({ width: getComputedStyle(element).width, height: getComputedStyle(element).height, appearance: getComputedStyle(element).appearance }));
+    assert.deepEqual(style, { width: '38px', height: '22px', appearance: 'none' });
+    const before = await input.isChecked();
+    await input.focus(); await input.press('Space');
+    assert.equal(await input.isChecked(), !before);
+    assert.equal(await input.evaluate(element => getComputedStyle(element).outlineStyle !== 'none'), true);
+  }
+  await slider('#retainHeaders'); await slider('#retainLanguages');
+  await page.locator('#settingsButton').click();
+  await slider('#answersEnabled'); await slider('#repeatPasses');
+  await page.locator('#closeSettingsButton').click(); await page.locator('#practiceTab').click();
+  await page.locator('#fieldsButton').click(); await slider('[data-field-toggle="2"]');
+  await page.locator('#applyFieldsButton').click();
+  assert.equal(await page.locator('[data-column-toggle="2"]').count(), 0);
+  await page.locator('#keysButton').click(); await slider('#uppercaseKeys');
+  assert.equal(await page.locator('[data-letter="Ä"]').isVisible(), true);
+  await page.locator('#settingsButton').click();
+  const downloading = page.waitForEvent('download'); await page.locator('#backupButton').click();
+  const stream = await (await downloading).createReadStream(), chunks = []; for await (const chunk of stream) chunks.push(chunk);
+  const saved = JSON.parse(Buffer.concat(chunks));
+  assert.equal(saved.preferences.retainHeaders, true); assert.equal(saved.preferences.retainLanguages, true);
+  assert.equal(saved.preferences.answersEnabled, true); assert.equal(saved.preferences.repeatPasses, true);
+  assert.equal(saved.deckSettings[saved.session.deck].fields[2].enabled, false);
+  await page.emulateMedia({ forcedColors: 'active' });
+  assert.equal(await page.locator('#answersEnabled').evaluate(element => getComputedStyle(element).appearance), 'auto');
+});
+
+test('Focus mode does not conceal actual storage failures', async t => {
+  const { page, context } = await setup(t, false, { reducedMotion: 'reduce' });
+  await context.addInitScript(() => Object.defineProperty(window, 'indexedDB', { get() { throw new Error('Storage denied'); } }));
+  await page.reload(); await ready(page); await page.locator('#practiceTab').click();
+  await page.getByLabel('Focus mode', { exact: true }).check();
+  assert.equal(await page.locator('#practiceView > .view-heading').isVisible(), false);
+  assert.equal(await page.locator('#storageNotice').isVisible(), true);
+  assert.match(await page.locator('#storageNotice').textContent(), /Saved storage is unavailable/);
+});
+
 test('Answers is off by default, is removed entirely, and can be re-enabled without losing its show/hide state or attempts', async t => {
   const { page } = await setup(t, true, { reducedMotion: 'reduce' });
   await importData(page); await practice(page);
@@ -1102,6 +1395,14 @@ test('themes, collapsed headers, and icon touch targets remain usable on narrow 
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    assert.equal(await page.locator('#shuffleButton').isVisible(), true);
+    assert.equal(await page.locator('#reviewLoop').isVisible(), true);
+    await page.getByLabel('Focus mode', { exact: true }).check();
+    assert.equal(await page.locator('#headerProgress').isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const focusTarget = await page.getByLabel('Focus mode', { exact: true }).evaluate(input => input.closest('label').getBoundingClientRect().height);
+    assert.ok(focusTarget >= 44);
+    await page.getByLabel('Focus mode', { exact: true }).uncheck();
     for (const selector of ['[data-column-toggle="answer"]', '[data-column-toggle="0"]', '[data-speak-column="0"]', '[data-reveal-row="0"]']) {
       await page.locator(selector).scrollIntoViewIfNeeded();
       const box = await page.locator(selector).boundingBox();

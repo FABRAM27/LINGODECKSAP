@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const crypto = require('node:crypto');
 
 const root = path.resolve(__dirname, '..');
 function loadModules(voices = []) {
@@ -26,6 +27,11 @@ test('the downloadable entry uses local classic scripts and a local stylesheet w
   }
   assert.match(html, /<link rel="stylesheet" href="assets\/css\/app\.css">/);
   assert.equal(/type="module"|rel="manifest"/.test(html), false, 'No module-loader requirement or unapproved PWA implementation');
+});
+
+test('speech implementation remains byte-for-byte identical to the pre-review-controls baseline', () => {
+  const speech = fs.readFileSync(path.join(root, 'assets/js/speech.js'));
+  assert.equal(crypto.createHash('sha256').update(speech).digest('hex'), 'c121e30e79d262294e847fdb6b4b310f063e3c5d9c1503d5feef99da894e6c60');
 });
 
 test('native sample parsing retains all 18 records, hierarchy, field contents, and order', () => {
@@ -91,15 +97,17 @@ test('quality-of-life preferences default off and retained column templates vali
   assert.equal(defaults.answersEnabled, false);
   assert.equal(defaults.retainHeaders, false);
   assert.equal(defaults.retainLanguages, false);
+  assert.equal(defaults.focusMode, false);
   assert.deepEqual(plain(defaults.retainedHeaders), []);
   assert.deepEqual(plain(defaults.retainedLanguages), []);
   const saved = library.validate({ version: 1, records: [], preferences: {
-    answersEnabled: true, retainHeaders: true, retainLanguages: true,
+    answersEnabled: true, retainHeaders: true, retainLanguages: true, focusMode: true,
     retainedHeaders: ['English', 'Deutsch', '', null, 7], retainedLanguages: ['en-US', 'de-DE', 'invalid', null]
   }, deckSettings: { Known: { fields: [{ name: 'Own name', language: 'fr-FR', enabled: false, visible: true }], answerCollapsed: true } } });
   assert.equal(saved.preferences.answersEnabled, true);
   assert.equal(saved.preferences.retainHeaders, true);
   assert.equal(saved.preferences.retainLanguages, true);
+  assert.equal(saved.preferences.focusMode, true);
   assert.deepEqual(plain(saved.preferences.retainedHeaders), ['English', 'Deutsch', null, null, null]);
   assert.deepEqual(plain(saved.preferences.retainedLanguages), ['en-US', 'de-DE', null, null]);
   assert.equal(saved.deckSettings.Known.fields[0].name, 'Own name');

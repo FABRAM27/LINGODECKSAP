@@ -24,6 +24,10 @@
     pendingDeck: '',
     activeDeck: '',
     activeRows: [],
+    reviewRows: [],
+    reviewShuffled: false,
+    reviewLoop: 'none',
+    orderedChunkIndex: 0,
     chunkIndex: 0,
     chunkSize: 5,
     practice: new Map(),
@@ -95,6 +99,9 @@
   els.answersEnabled = document.getElementById('answersEnabled');
   els.retainHeaders = document.getElementById('retainHeaders');
   els.retainLanguages = document.getElementById('retainLanguages');
+  ['shuffleButton', 'reviewLoop', 'focusMode', 'headerProgress', 'headerProgressFill', 'roundRestartHint', 'nextArrowIcon', 'nextRestartIcon'].forEach(function (name) {
+    els[name] = document.getElementById(name);
+  });
 
   var libraryStore = Bellasprak.library.createStore(storageWarning);
   var speech = Bellasprak.speech.create({
@@ -136,8 +143,9 @@
     persistLibrary();
   }
 
-  function storageWarning(message) {
+  function storageWarning(message, kind) {
     els.storageNotice.textContent = message;
+    els.storageNotice.dataset.kind = kind || 'warning';
     els.storageNotice.hidden = false;
   }
 
@@ -147,7 +155,7 @@
       fields: state.fields.map(function (field) { return Object.assign({}, field); }),
       answerField: state.answerField,
       answerCollapsed: state.answerCollapsed,
-      chunk: state.chunkIndex
+      chunk: getOrderedChunkIndex()
     };
     rememberSourceColumns();
   }
@@ -161,7 +169,7 @@
   function persistLibrary() {
     if (state.restoring) return libraryStore.pending();
     saveCurrentDeck();
-    library.session = { deck: state.activeDeck, chunk: state.chunkIndex, view: els.practiceView.hidden ? 'source' : 'practice' };
+    library.session = { deck: state.activeDeck, chunk: getOrderedChunkIndex(), view: els.practiceView.hidden ? 'source' : 'practice' };
     return libraryStore.save(library);
   }
 
@@ -217,7 +225,7 @@
       var saved = await libraryStore.open();
       if (saved) library = validateLibrary(saved);
       restoreLibraryUI();
-      if (location.protocol === 'file:') storageWarning('Local-file storage depends on this browser and file location. Keep a library backup in Settings before moving this file.');
+      if (location.protocol === 'file:') storageWarning('Local-file storage depends on this browser and file location. Keep a library backup in Settings before moving this file.', 'local-file');
     } catch (error) {
       libraryStore.close();
       storageWarning('Saved storage is unavailable or could not be read. You can practice, but back up this session in Settings before closing it.');
@@ -294,10 +302,12 @@
     els.practiceTab.setAttribute('aria-selected', String(!isSource));
     els.sourceView.hidden = !isSource;
     els.practiceView.hidden = isSource;
+    applyFocusMode();
 
     if (!isSource) {
       renderPractice();
     }
+    updateHeaderProgress();
     scheduleSave();
   }
 
@@ -374,6 +384,10 @@
   function resetLoadedData() {
     state.activeDeck = '';
     state.activeRows = [];
+    state.reviewRows = [];
+    state.reviewShuffled = false;
+    state.reviewLoop = 'none';
+    state.orderedChunkIndex = 0;
     state.chunkIndex = 0;
     state.answerCollapsed = false;
     state.practice.clear();
@@ -443,6 +457,9 @@
     cancelSpeech();
     state.activeDeck = state.pendingDeck;
     state.activeRows = matching;
+    state.reviewRows = matching.slice();
+    state.reviewShuffled = false;
+    state.reviewLoop = 'none';
     var saved = library.deckSettings[state.activeDeck] || {};
     var width = matching.reduce(function (maximum, record) { return Math.max(maximum, record.fields.length); }, 0);
     state.fields = Array.from({ length: width }, function (_, index) {
@@ -463,6 +480,7 @@
     state.answerField = Number.isInteger(saved.answerField) && state.fields[saved.answerField] && state.fields[saved.answerField].enabled ? saved.answerField : -1;
     state.answerCollapsed = saved.answerCollapsed === true;
     state.chunkIndex = Math.min(restoring && library.session.deck === state.activeDeck ? library.session.chunk || 0 : saved.chunk || 0, getChunkCount() - 1);
+    state.orderedChunkIndex = state.chunkIndex;
     state.practice.clear();
     state.revealAll = false;
 
@@ -511,7 +529,7 @@
   }
 
   function getChunkCount() {
-    return Math.ceil(state.activeRows.length / state.chunkSize);
+    return Math.ceil(state.reviewRows.length / state.chunkSize);
   }
 
   function populateRanges() {
@@ -524,7 +542,7 @@
 
     els.rangeSelect.innerHTML = Array.from({ length: chunkCount }, function (_, index) {
       var start = index * state.chunkSize + 1;
-      var end = Math.min((index + 1) * state.chunkSize, state.activeRows.length);
+      var end = Math.min((index + 1) * state.chunkSize, state.reviewRows.length);
       return '<option value="' + index + '">' + start + '-' + end + '</option>';
     }).join('');
     els.rangeSelect.value = String(state.chunkIndex);
@@ -533,7 +551,64 @@
 
   function getCurrentChunk() {
     var start = state.chunkIndex * state.chunkSize;
-    return state.activeRows.slice(start, start + state.chunkSize);
+    return state.reviewRows.slice(start, start + state.chunkSize);
+  }
+
+  function getOrderedChunkIndex() {
+    // A shuffled position is temporary; never save it as an ordered checkpoint.
+    return state.reviewShuffled ? state.orderedChunkIndex : state.chunkIndex;
+  }
+
+  function startShuffledRound() {
+    if (!state.activeRows.length) return;
+    if (!state.reviewShuffled) state.orderedChunkIndex = state.chunkIndex;
+    var rows = state.activeRows.slice();
+    // Fisher–Yates over a copy: every record (including identical-text entries) stays present.
+    for (var i = rows.length - 1; i > 0; i -= 1) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var current = rows[i]; rows[i] = rows[j]; rows[j] = current;
+    }
+    state.reviewRows = rows;
+    state.reviewShuffled = true;
+    state.chunkIndex = 0;
+    clearPracticeForNavigation();
+    populateRanges();
+    renderPractice();
+    persistLibrary();
+  }
+
+  function canGoNextGroup() {
+    return state.reviewRows.length > 0 && (state.chunkIndex < getChunkCount() - 1 || state.reviewLoop !== 'none');
+  }
+
+  function nextGroup(focusAnswer) {
+    if (!canGoNextGroup()) return;
+    if (state.chunkIndex < getChunkCount() - 1) {
+      changeChunk(state.chunkIndex + 1, focusAnswer);
+    } else if (state.reviewLoop === 'shuffle') {
+      startShuffledRound();
+    } else {
+      clearPracticeForNavigation();
+      state.chunkIndex = 0;
+      els.rangeSelect.value = '0';
+      renderPractice();
+      persistLibrary();
+    }
+  }
+
+  function applyFocusMode() {
+    els.focusMode.checked = library.preferences.focusMode;
+    document.body.classList.toggle('is-practice-focused', library.preferences.focusMode && !els.practiceView.hidden);
+  }
+
+  function updateHeaderProgress() {
+    var count = getChunkCount();
+    var position = count > 1 ? state.chunkIndex / (count - 1) * 100 : 0;
+    var text = !count ? 'No deck selected' : count === 1 ? 'Group 1 of 1; all entries are displayed' : 'Group ' + (state.chunkIndex + 1) + ' of ' + count;
+    els.headerProgress.hidden = els.practiceView.hidden;
+    els.headerProgress.setAttribute('aria-valuenow', String(position));
+    els.headerProgress.setAttribute('aria-valuetext', text);
+    els.headerProgressFill.style.width = position + '%';
   }
 
   function getSelectedFieldIndexes() {
@@ -645,7 +720,20 @@
     els.resetButton.disabled = !hasRows;
     els.rangeSelect.disabled = !hasRows;
     els.previousButton.disabled = !hasRows || state.chunkIndex <= 0;
-    els.nextButton.disabled = !hasRows || state.chunkIndex >= chunkCount - 1;
+    els.nextButton.disabled = !canGoNextGroup();
+    els.shuffleButton.disabled = !hasRows;
+    els.reviewLoop.disabled = !hasRows;
+    els.reviewLoop.value = state.reviewLoop;
+    var restart = hasRows && state.chunkIndex === chunkCount - 1 && state.reviewLoop !== 'none';
+    var nextLabel = restart ? (state.reviewLoop === 'shuffle' ? 'Start new shuffled round' : 'Restart current round') : 'Next range';
+    els.nextButton.classList.toggle('is-round-restart', restart);
+    els.nextButton.setAttribute('aria-label', nextLabel);
+    els.nextButton.title = nextLabel;
+    els.nextArrowIcon.toggleAttribute('hidden', restart);
+    els.nextRestartIcon.toggleAttribute('hidden', !restart);
+    els.roundRestartHint.textContent = restart ? (state.reviewLoop === 'shuffle' ? 'Next creates a fresh shuffle of every entry in this deck.' : 'Next returns to the first group in the same review order.') : '';
+    if (restart) els.nextButton.setAttribute('aria-describedby', 'roundRestartHint');
+    else els.nextButton.removeAttribute('aria-describedby');
     els.repeatButton.hidden = !library.preferences.repeatPasses;
     els.repeatButton.disabled = !hasRows;
     els.keysButton.disabled = !hasRows || !isAnswerColumnVisible();
@@ -655,11 +743,12 @@
     els.activeDeckName.textContent = state.activeDeck;
     els.activeDeckName.style.overflowWrap = 'anywhere';
     els.reviewDate.textContent = library.completed[state.activeDeck] ? 'Completed · Last reviewed ' + new Date(library.completed[state.activeDeck]).toLocaleDateString() : '';
-    els.groupPosition.textContent = hasRows ? 'Group ' + (state.chunkIndex + 1) + ' of ' + chunkCount + ' · Words ' + (state.chunkIndex * state.chunkSize + 1) + '–' + Math.min((state.chunkIndex + 1) * state.chunkSize, state.activeRows.length) + ' of ' + state.activeRows.length : 'No group selected';
+    els.groupPosition.textContent = hasRows ? 'Group ' + (state.chunkIndex + 1) + ' of ' + chunkCount + ' · Words ' + (state.chunkIndex * state.chunkSize + 1) + '–' + Math.min((state.chunkIndex + 1) * state.chunkSize, state.reviewRows.length) + ' of ' + state.reviewRows.length + (state.reviewShuffled ? ' · Shuffled round' : '') : 'No group selected';
     els.revealAllButton.setAttribute('aria-pressed', String(state.revealAll));
     els.revealAllButton.classList.toggle('is-active', state.revealAll);
     els.revealAllButton.lastChild.nodeValue = state.revealAll ? ' Hide all' : ' Reveal all';
     els.practiceProgressBar.style.width = hasRows ? (((state.chunkIndex + 1) / chunkCount) * 100) + '%' : '0%';
+    updateHeaderProgress();
   }
 
   function clearPracticeForNavigation() {
@@ -858,6 +947,7 @@
 
     var oldSize = state.chunkSize;
     var firstEntry = state.chunkIndex * oldSize;
+    var orderedFirstEntry = getOrderedChunkIndex() * oldSize;
     saveCurrentDeck();
     // Saved chunks refer to the previous global size, including decks not open now.
     Object.keys(library.deckSettings).forEach(function (deck) {
@@ -867,6 +957,7 @@
     library.preferences.practiceGroupSize = size;
     state.chunkSize = size;
     state.chunkIndex = state.activeRows.length ? Math.min(Math.floor(firstEntry / size), getChunkCount() - 1) : 0;
+    state.orderedChunkIndex = state.activeRows.length ? Math.min(Math.floor(orderedFirstEntry / size), getChunkCount() - 1) : 0;
     populateRanges();
     renderPractice();
     if (state.lastSpeech) {
@@ -879,7 +970,7 @@
 
   function exportLibrary() {
     saveCurrentDeck();
-    library.session = { deck: state.activeDeck, chunk: state.chunkIndex, view: els.practiceView.hidden ? 'source' : 'practice' };
+    library.session = { deck: state.activeDeck, chunk: getOrderedChunkIndex(), view: els.practiceView.hidden ? 'source' : 'practice' };
     var blob = new Blob([JSON.stringify(library, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
     var link = document.createElement('a');
@@ -903,7 +994,7 @@
     var key = event.key.toLocaleLowerCase();
     var action = null;
     if ((key === '[' || key === 'b') && state.chunkIndex > 0) action = function () { changeChunk(state.chunkIndex - 1, false); };
-    if ((key === ']' || key === 'n') && state.chunkIndex < getChunkCount() - 1) action = function () { changeChunk(state.chunkIndex + 1, false); };
+    if ((key === ']' || key === 'n') && canGoNextGroup()) action = function () { nextGroup(false); };
     if (/^[1-9]$/.test(key)) {
       var index = getSelectedFieldIndexes()[Number(key) - 1];
       if (index !== undefined) action = function () { toggleColumn(index); };
@@ -1105,7 +1196,20 @@
   });
 
   els.nextButton.addEventListener('click', function () {
-    changeChunk(state.chunkIndex + 1);
+    nextGroup();
+  });
+  els.shuffleButton.addEventListener('click', startShuffledRound);
+  els.reviewLoop.addEventListener('change', function () {
+    var mode = els.reviewLoop.value;
+    if (mode === state.reviewLoop) return;
+    state.reviewLoop = mode;
+    if (mode === 'shuffle') startShuffledRound();
+    else updatePracticeControls();
+  });
+  els.focusMode.addEventListener('change', function () {
+    library.preferences.focusMode = els.focusMode.checked;
+    applyFocusMode();
+    persistLibrary();
   });
 
   els.revealAllButton.addEventListener('click', function () {

@@ -6,7 +6,7 @@
   var usefulLetters = Bellasprak.config.usefulLetters;
 
   function createEmptyLibrary() {
-    return { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE', theme: 'default', practiceGroupSize: 5, answersEnabled: false, retainHeaders: false, retainLanguages: false, retainedHeaders: [], retainedLanguages: [] }, session: {} };
+    return { version: 1, records: [], deckSettings: Object.create(null), completed: Object.create(null), preferences: { rate: 1, repeatPasses: false, shortcuts: true, keys: false, keyLanguage: 'de-DE', theme: 'default', practiceGroupSize: 5, answersEnabled: false, retainHeaders: false, retainLanguages: false, retainedHeaders: [], retainedLanguages: [], focusMode: false }, session: {} };
   }
 
   function isValidPracticeGroupSize(value) {
@@ -38,6 +38,7 @@
       theme: themes.some(function (theme) { return theme.id === preferences.theme; }) ? preferences.theme : 'default',
       practiceGroupSize: isValidPracticeGroupSize(preferences.practiceGroupSize) ? preferences.practiceGroupSize : 5,
       answersEnabled: preferences.answersEnabled === true,
+      focusMode: preferences.focusMode === true,
       retainHeaders: preferences.retainHeaders === true,
       retainLanguages: preferences.retainLanguages === true,
       retainedHeaders: Array.isArray(preferences.retainedHeaders) ? preferences.retainedHeaders.map(function (name) { return typeof name === 'string' && name.trim() ? name : null; }) : [],

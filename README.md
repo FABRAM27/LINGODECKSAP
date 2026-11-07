@@ -1,8 +1,9 @@
 # Bellasprak
 
 Bellasprak prepares vocabulary for Anki through small, predictable, ordered groups,
-visual recognition, and pronunciation. Anki remains responsible for randomized
-recall and spaced repetition.
+visual recognition, and pronunciation. Ordered practice remains the default;
+optional shuffled review rounds add variety without changing stored vocabulary.
+Anki remains responsible for long-term retention and spaced repetition.
 
 ## Open the app
 
@@ -116,6 +117,42 @@ before changing module boundaries or storage behavior.
   **Undo completion**, explicit deck deletion, or replacement from a backup.
   Marking a parent does not mark its children. Source's **Completed decks** filter
   and blue completion labels identify reviewed decks.
+
+## Review rounds, looping, and Focus mode
+
+- **Shuffle** creates one temporary, whole-deck permutation and opens its first
+  group. Every selected entry appears exactly once in the list, including separate
+  entries with identical text. Click it again whenever you want a fresh round.
+  Source rows, imported records, hierarchy, identities, and field contents never
+  move or change. Group size still controls only how many entries are displayed.
+- **Review loop → No loop** is the default: Next stops at the final group, even
+  after a manual shuffle. **Loop** keeps Next available there and restarts the
+  same sequence when clicked. **Loop and shuffle** immediately starts a shuffled
+  round, then creates another only when Next is clicked at its end. A green
+  restart icon, tooltip, and accessible description identify that action.
+  Nothing advances automatically or waits for typed answers or completion marks.
+- Switching to No loop or Loop keeps the current order and position. Previous,
+  ranges, group-size changes, and Repeat group never reshuffle. Resizing retains
+  the group containing the previous group's first entry in the current sequence.
+- Review order and loop choice are session-only. Peeking at Source does not reset
+  them, but **Retrieve data** (or reload) returns to ordered practice and No loop.
+  Shuffled positions do not overwrite the saved ordered checkpoint; backups
+  contain original records, not a randomized deck. Review row numbers and ranges
+  represent positions in the current round.
+- The thin **header progress bar** shows navigation position: empty at the first
+  group and full at the last, moving backward and resetting with each round.
+  An empty or single-group deck stays at zero, with accessible text explaining
+  that no deck is loaded or all entries are already displayed. This is not a
+  mastery/completion indicator. The existing in-card group indicator is unchanged.
+- **Focus mode**, off by default, hides the Practice heading block and the
+  local-file reminder, collapsing their space. The toggle remains in the practice
+  controls to exit. It does not re-render answers, reset the round, stop audio,
+  invoke browser fullscreen, or alter Source. Actual storage errors stay visible.
+  The layout preference is saved with the library and included in backups.
+
+On/off controls use a consistent slider appearance while retaining their native
+checkbox state, clickable labels, Tab/Space support, and Fields-selection behavior.
+Dropdowns, action buttons, and eye/eye-off controls retain their existing roles.
 
 ## Audio and Useful Keys
 
